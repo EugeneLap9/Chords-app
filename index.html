@@ -25,6 +25,14 @@
 –chord: #64b5f6;
 –radius: 12px;
 –bottom-bar: 64px;
+/* Override any Telegram injected vars */
+–tg-theme-bg-color: #17212b;
+–tg-theme-text-color: #e8edf2;
+–tg-theme-hint-color: #708aaa;
+–tg-theme-link-color: #64b5f6;
+–tg-theme-button-color: #5288c1;
+–tg-theme-button-text-color: #ffffff;
+–tg-color-scheme: dark;
 }
 
 /* ── WHITE THEME ── */
@@ -80,13 +88,23 @@ body.theme-white code { color: #111; }
 
 - { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
 
+html, body {
+background: #17212b !important;
+color: #e8edf2 !important;
+}
+
 body {
 font-family: ‘Nunito’, sans-serif;
-background: var(–bg);
-color: var(–text);
+background: #17212b !important;
+color: #e8edf2 !important;
 min-height: 100dvh;
 overflow-x: hidden;
 padding-bottom: calc(var(–bottom-bar) + 12px);
+}
+
+body.theme-white, html.theme-white {
+background: #f5f5f5 !important;
+color: #111 !important;
 }
 
 /* ── HEADER ── */
@@ -121,7 +139,7 @@ outline: none; position: relative;
 .search-icon { position: absolute; left: 28px; top: 50%; transform: translateY(-50%); color: var(–muted); font-size: 16px; pointer-events: none; }
 
 /* ── PAGES ── */
-.page { display: none; padding: 0 16px; }
+.page { display: none; padding: 0 16px; background: var(–bg); min-height: 100dvh; }
 .page.active { display: block; }
 
 /* ── SONG LIST ── */
@@ -1228,9 +1246,11 @@ document.querySelectorAll('.nav-btn').forEach(btn => {
 });
 
 // ═══════════════════════════════════════════
-//  DEMO DATA
+//  DEMO DATA — загружается только при первом открытии
 // ═══════════════════════════════════════════
-if (!songs.length) {
+const DEMO_KEY = 'cb_demo_loaded';
+if (!songs.length && !localStorage.getItem(DEMO_KEY)) {
+  localStorage.setItem(DEMO_KEY, '1');
   songs = [
     {
       id: uid(),
