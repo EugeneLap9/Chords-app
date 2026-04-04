@@ -1590,8 +1590,12 @@ document.getElementById('theme-btn').addEventListener('click', () => {
 // ═══════════════════════════════════════════
 try {
   if (window.Telegram && window.Telegram.WebApp) {
-    window.Telegram.WebApp.ready();
-    window.Telegram.WebApp.expand();
+    const tg = window.Telegram.WebApp;
+    tg.ready();
+    tg.expand();
+    // Force full screen on supported versions
+    if (tg.requestFullscreen) tg.requestFullscreen();
+    tg.disableVerticalSwipes && tg.disableVerticalSwipes();
   }
 } catch(e) {}
 
