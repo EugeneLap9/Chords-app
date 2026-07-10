@@ -424,7 +424,7 @@
   .song-card-block {
     background:var(--glass-bg); backdrop-filter:blur(12px); -webkit-backdrop-filter:blur(12px);
     border-top:1px solid var(--glass-border); border-bottom:1px solid var(--glass-border);
-    margin-bottom:2px; padding:3px 8px 4px 13px; position:relative; overflow:hidden;
+    margin-bottom:2px; padding:2px 8px 3px 12px; position:relative; overflow:hidden;
   }
   .song-card-block::before {
     content:''; position:absolute; left:0; top:0; bottom:0; width:4px;
@@ -460,13 +460,13 @@
   .chords-only-block.block-collapsed .block-collapse-btn { transform:rotate(-90deg); }
   .song-card-block.block-collapsed .block-chords,
   .chords-only-block.block-collapsed .chords-only-rows-wrap { display:none; }
-  .block-chords { display:flex; flex-direction:column; gap:4px; }
+  .block-chords { display:flex; flex-direction:column; gap:3px; }
   .chord-row { display:flex; flex-wrap:wrap; gap:3px; margin-bottom:1px; }
 
   .chords-only-block {
     background:var(--glass-bg); backdrop-filter:blur(12px); -webkit-backdrop-filter:blur(12px);
     border-top:1px solid var(--glass-border); border-bottom:1px solid var(--glass-border);
-    margin-bottom:2px; padding:3px 8px 4px 13px; position:relative; overflow:hidden;
+    margin-bottom:2px; padding:2px 8px 3px 12px; position:relative; overflow:hidden;
   }
   .chords-only-block::before {
     content:''; position:absolute; left:0; top:0; bottom:0; width:4px;
@@ -510,7 +510,7 @@
   .lyric-line {
     font-family:'SF Mono','Fira Code','Courier New',monospace;
     font-size:calc(var(--song-font,13.5px) * 0.88); color:var(--text);
-    line-height:1.6; white-space:pre-wrap; word-break:break-word;
+    line-height:1.42; white-space:pre-wrap; word-break:break-word;
   }
 
   .song-content.mode-both .chord-row { display:flex; }
@@ -698,7 +698,7 @@
     display:inline-flex; align-items:center; justify-content:center;
     font-family:'SF Mono','Fira Code','Courier New',monospace;
     background:rgba(183,148,255,0.1); color:var(--primary); border-radius:8px;
-    padding:4px 8px; font-size:15px; font-weight:800;
+    padding:2px 7px; font-size:15px; font-weight:800;
     border:1.5px solid rgba(183,148,255,0.25); letter-spacing:0.01em; min-width:30px;
   }
   .song-content .chord-badge {
@@ -727,13 +727,14 @@
   .perf-nav.show { display:flex; }
   .perf-nav-btn {
     width:46px; height:46px; border-radius:50%; flex-shrink:0;
-    background:var(--glass-bg); backdrop-filter:blur(10px); -webkit-backdrop-filter:blur(10px);
-    border:1px solid var(--glass-border); color:var(--text);
+    background:rgba(24,22,32,0.88); backdrop-filter:blur(10px); -webkit-backdrop-filter:blur(10px);
+    border:1px solid rgba(183,148,255,0.4); color:var(--text);
     display:flex; align-items:center; justify-content:center;
-    font-size:18px; opacity:0.35; transition:opacity 0.15s; cursor:pointer; user-select:none;
+    font-size:18px; opacity:1; transition:background 0.15s; cursor:pointer; user-select:none;
+    box-shadow:0 4px 16px rgba(0,0,0,0.35);
   }
-  .perf-nav-btn:active { opacity:0.9; }
-  .perf-nav-btn.disabled { opacity:0.12; pointer-events:none; }
+  .perf-nav-btn:active { background:rgba(183,148,255,0.35); }
+  .perf-nav-btn.disabled { opacity:0.3; pointer-events:none; }
   .perf-nav-pos {
     font-family:'SF Mono','Fira Code','Courier New',monospace; font-size:10px;
     text-align:center; opacity:0.5; cursor:pointer; padding:2px 4px; user-select:none;
@@ -1013,7 +1014,7 @@
 
   .song-content.mode-chords .chords-only-block {
     display:block;
-    padding:3px 8px 5px 16px; margin-bottom:2px;
+    padding:2px 8px 4px 15px; margin-bottom:2px;
     background:var(--glass-bg); border-top:1px solid var(--glass-border); border-bottom:1px solid var(--glass-border);
     backdrop-filter:none;
   }
@@ -1035,7 +1036,7 @@
     background:rgba(183,148,255,0.1) !important;
     color:#fff !important;
     border-radius:7px !important;
-    padding:4px 7px !important;
+    padding:2px 6px !important;
     font-size:var(--song-font, 15px); font-weight:800;
     border:1.35px solid rgba(183,148,255,0.225) !important;
     letter-spacing:0.01em; min-width:27px;
@@ -3522,18 +3523,13 @@ function renderSetlistView(sl) {
 
   document.getElementById('setlist-view-content').innerHTML = `
     <div class="song-view-header">
-      <div style="display:flex;align-items:center;gap:8px;">
-        <div style="flex:1"><div class="song-view-artist">${liveSl.date || ''} · ${slSongs.length} песен</div></div>
+      <div style="display:flex;align-items:center;gap:8px;justify-content:flex-end">
         <button class="ctrl-btn" id="add-songs-btn" style="background:var(--accent);border-color:var(--accent);color:#fff" aria-label="Добавить песни">＋ Добавить</button>
+        <button class="icon-btn" id="sl-view-mode-btn" style="width:auto;padding:0 10px;font-size:12px;font-weight:800;flex-shrink:0" aria-label="Режим отображения" title="Режим отображения">${GLOBAL_VIEW_LABELS[globalViewMode]}</button>
         <button class="icon-btn perf-mode-btn ${performanceMode ? 'active' : ''}" id="perf-mode-toggle" style="font-size:16px;flex-shrink:0" aria-label="Режим выступления" title="Режим выступления">🎤</button>
         <button class="icon-btn" id="edit-setlist-btn" style="font-size:16px;flex-shrink:0" title="Редактировать">✏️</button>
         <button class="icon-btn" id="sync-keys-btn" style="font-size:15px" aria-label="Синхронизировать тональности" title="Синхронизировать тональности с другими устройствами">📡</button>
-        <button class="icon-btn" id="share-setlist-btn" aria-label="Поделиться" title="Поделиться списком">📤</button>
       </div>
-    </div>
-    <div class="sl-quick-search">
-      <span class="sl-qs-icon">🔍</span>
-      <input id="sl-search-input" placeholder="Поиск в сет-листе..." autocomplete="off" aria-label="Поиск в сет-листе">
     </div>
     <div style="padding:5px 16px 12px" id="setlist-songs-list">
       ${!slSongs.length
@@ -3556,29 +3552,11 @@ function renderSetlistView(sl) {
     </div>
   `;
 
-  const slSearchInput = document.getElementById('sl-search-input');
-  if (slSearchInput) {
-    slSearchInput.addEventListener('input', () => {
-      const q = slSearchInput.value.toLowerCase();
-      document.querySelectorAll('#setlist-songs-list .setlist-song-item').forEach(item => {
-        const title = (item.querySelector('.setlist-song-title')?.textContent || '').toLowerCase();
-        const meta = (item.querySelector('.setlist-song-key')?.textContent || '').toLowerCase();
-        item.style.display = (title.includes(q) || meta.includes(q)) ? '' : 'none';
-      });
-    });
-  }
-
-  document.getElementById('share-setlist-btn').addEventListener('click', () => {
-    const text = `📋 ${liveSl.name}\n${liveSl.date||''}\n\n` +
-      slSongs.map((s,i) => {
-        const offset = transposeMap[s.id]||0;
-        const key = offset ? transposeKey(s.key||'C', offset) : (s.key||'?');
-        return `${i+1}. ${s.title} — ${key}${offset ? ` (${offset>0?'+':''}${offset})` : ''}`;
-      }).join('\n');
-    navigator.clipboard.writeText(text).then(() => showToast('Скопировано!')).catch(() => showToast(text));
-  });
-
   document.getElementById('add-songs-btn').addEventListener('click', () => openSongPicker(liveSl.id));
+  document.getElementById('sl-view-mode-btn').addEventListener('click', () => {
+    cycleGlobalViewMode();
+    document.getElementById('sl-view-mode-btn').textContent = GLOBAL_VIEW_LABELS[globalViewMode];
+  });
   document.getElementById('perf-mode-toggle').addEventListener('click', () => {
     performanceMode = !performanceMode;
     showToast(performanceMode ? 'Режим выступления включён' : 'Режим выступления выключен');
@@ -4700,7 +4678,7 @@ async function updateStorageInfo() {
 // ═══════════════════════════════════════════
 //  FONT SIZE
 // ═══════════════════════════════════════════
-const FONT_PCTS = [80,90,100,120,135,150];
+const FONT_PCTS = [80,90,100,120,135,150,165,180,200];
 const BASE_FONT = 13.5;
 const FONT_SIZES = FONT_PCTS.map(p => +(BASE_FONT * p / 100).toFixed(1));
 const FONT_KEY = 'cb_fontsize';
