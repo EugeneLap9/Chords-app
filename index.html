@@ -606,7 +606,7 @@
   .setlist-card {
     background:var(--glass-bg); backdrop-filter:blur(16px); -webkit-backdrop-filter:blur(16px);
     border:1px solid var(--glass-border); border-radius:var(--radius);
-    padding:14px 16px; margin-bottom:8px; cursor:pointer;
+    padding:10px 14px; margin-bottom:6px; cursor:pointer;
     transition:background 0.2s, border-color 0.2s, transform 0.15s;
   }
   .setlist-card:active { border-color:rgba(183,148,255,0.4); transform:scale(0.985); }
@@ -717,6 +717,28 @@
   .snav-btn.disabled { color:var(--border); pointer-events:none; }
   .snav-label { flex:1; text-align:center; font-family:'SF Mono','Fira Code','Courier New',monospace; font-size:13px; font-weight:600; color:var(--muted); }
 
+  /* ── PERFORMANCE MODE ── */
+  #song-header.perf-active { display:none; }
+  .perf-mode-btn.active { background:rgba(183,148,255,0.25); border-color:rgba(183,148,255,0.6); color:var(--primary); }
+  .perf-nav {
+    position:fixed; right:8px; top:calc(50% + 40px); transform:translateY(-50%);
+    display:none; flex-direction:column; align-items:center; gap:10px; z-index:50;
+  }
+  .perf-nav.show { display:flex; }
+  .perf-nav-btn {
+    width:46px; height:46px; border-radius:50%; flex-shrink:0;
+    background:var(--glass-bg); backdrop-filter:blur(10px); -webkit-backdrop-filter:blur(10px);
+    border:1px solid var(--glass-border); color:var(--text);
+    display:flex; align-items:center; justify-content:center;
+    font-size:18px; opacity:0.35; transition:opacity 0.15s; cursor:pointer; user-select:none;
+  }
+  .perf-nav-btn:active { opacity:0.9; }
+  .perf-nav-btn.disabled { opacity:0.12; pointer-events:none; }
+  .perf-nav-pos {
+    font-family:'SF Mono','Fira Code','Courier New',monospace; font-size:10px;
+    text-align:center; opacity:0.5; cursor:pointer; padding:2px 4px; user-select:none;
+  }
+
   .import-tabs {
     display:flex; gap:0; margin-bottom:14px; background:rgba(255,255,255,0.04);
     border:1px solid var(--glass-border); border-radius:12px; padding:3px;
@@ -784,8 +806,8 @@
 
   /* ── OVERFLOW BUTTON SIZE FIX ── */
   .overflow-trigger {
-    width:44px !important; height:44px !important;
-    font-size:20px !important; letter-spacing:0 !important;
+    width:34px !important; height:34px !important;
+    font-size:16px !important; letter-spacing:0 !important;
     padding:0 !important;
   }
 
@@ -1300,6 +1322,7 @@
   <div id="setlists-container"></div>
 </div>
 <div class="page" id="page-song-view">
+  <div class="perf-nav" id="perf-nav-buttons"></div>
   <div class="song-view">
     <div class="song-view-header" id="song-header"></div>
     <div class="inline-edit-banner" id="inline-edit-banner">
@@ -1492,6 +1515,25 @@
       <button class="drawer-close" onclick="closeOverlay('overlay-pick-setlist')" aria-label="Закрыть">✕</button>
     </div>
     <div id="pick-setlist-list"></div>
+  </div>
+</div>
+
+<!-- SINGER PICKER DRAWER -->
+<div class="overlay" id="overlay-singer-picker">
+  <div class="drawer">
+    <div class="drawer-handle"></div>
+    <div class="drawer-header">
+      <div class="drawer-title">🎤 Выбрать солиста</div>
+      <button class="drawer-close" onclick="closeOverlay('overlay-singer-picker')" aria-label="Закрыть">✕</button>
+    </div>
+    <div id="singer-picker-list"></div>
+    <div class="form-group" style="margin-top:10px">
+      <label class="form-label" for="inp-new-singer">Новый солист</label>
+      <div style="display:flex;gap:8px">
+        <input class="form-input" id="inp-new-singer" placeholder="Имя" style="flex:1">
+        <button class="ctrl-btn" id="add-singer-btn" style="background:var(--accent);border-color:var(--accent);color:#fff">＋</button>
+      </div>
+    </div>
   </div>
 </div>
 
@@ -1816,6 +1858,7 @@ let transposeOffset = 0;
 let currentPage = 'songs';
 let selectedTags = [];
 let setlistContext = null;
+let performanceMode = false;
 let isEditingDrawerOpen = false;
 
 const transposeMap = LS.get('cb_transpose', {});
@@ -2044,6 +2087,148 @@ function transposeLyrics(text, semitones) {
 }
 function getTransposeLabel(n) { return n === 0 ? 'Ориг.' : (n > 0 ? '+' : '') + n; }
 function transposeKey(key, semitones) { return transposeChord(key, semitones); }
+
+// ═══════════════════════════════════════════
+//  SINGER PROFILES / TRANSPOSE RECOMMENDATION
+// ═══════════════════════════════════════════
+const DEFAULT_SINGER_PROFILES = {
+  "Сергей":  { keysSung: ["F","D"], min: 2, max: 5 },
+  "Даша":    { keysSung: ["A","G","D"], min: 2, max: 9 },
+  "Арам":    { keysSung: ["E","A","G","Em"], min: 4, max: 9 },
+  "Кэти":    { keysSung: ["Db","D","E","F","B"], min: 1, max: 11 },
+  "Саша М":  { keysSung: ["D","E","B"], min: 2, max: 11 },
+  "Саша Ли": { keysSung: ["E"], min: 4, max: 4 }
+};
+let singerProfiles = LS.get('cb_singers', null) || JSON.parse(JSON.stringify(DEFAULT_SINGER_PROFILES));
+function saveSingerProfiles() { LS.set('cb_singers', singerProfiles); }
+
+function keyBareNum(key) {
+  const bare = String(key || 'C').replace(/m$/, '');
+  const norm = normalizeNote(bare);
+  const idx = NOTES.indexOf(norm);
+  return idx === -1 ? 0 : idx;
+}
+
+const AWKWARD_KEYS = new Set([1, 6]); // C#/Db, F#/Gb — неудобные тональности для гитары
+
+function recommendKeyForSinger(originalKey, profile, tolerance) {
+  tolerance = tolerance == null ? 1 : tolerance;
+  const isMinor = /m$/.test(originalKey || '');
+  const songNum = keyBareNum(originalKey);
+  const lowConfidence = (profile.min === profile.max) && (profile.keysSung || []).length <= 1;
+
+  let shift = 0;
+  if (songNum >= profile.min - tolerance && songNum <= profile.max + tolerance) {
+    shift = 0;
+  } else if (songNum > profile.max) {
+    shift = -(songNum - profile.max);
+  } else if (songNum < profile.min) {
+    shift = profile.min - songNum;
+  }
+
+  // мало данных о солисте — транспонируем только при заметной разнице
+  if (lowConfidence && Math.abs(shift) <= 2) shift = 0;
+
+  // кратчайший путь по хроматическому кругу
+  if (shift > 6) shift -= 12;
+  if (shift < -6) shift += 12;
+
+  // избегаем "неудобных" тональностей — сдвигаем ещё на полтона в ту же сторону, если это не хуже
+  let newNum = ((songNum + shift) % 12 + 12) % 12;
+  if (AWKWARD_KEYS.has(newNum) && shift !== 0) {
+    const dir = shift > 0 ? 1 : -1;
+    const altShift = shift + dir;
+    const altNum = ((songNum + altShift) % 12 + 12) % 12;
+    if (!AWKWARD_KEYS.has(altNum)) { shift = altShift; newNum = altNum; }
+  }
+
+  return {
+    originalKey,
+    recommendedKey: NOTES[newNum] + (isMinor ? 'm' : ''),
+    shiftSemitones: shift,
+    needsTranspose: shift !== 0,
+    lowConfidence
+  };
+}
+
+function updateSingerProfileWithKey(name, appliedKey) {
+  const p = singerProfiles[name];
+  if (!p) return;
+  const num = keyBareNum(appliedKey);
+  p.keysSung = p.keysSung || [];
+  p.keysSung.push(appliedKey);
+  p.min = Math.min(p.min, num);
+  p.max = Math.max(p.max, num);
+  saveSingerProfiles();
+}
+
+function applySingerTranspose(song, name) {
+  const profile = singerProfiles[name];
+  if (!profile) return;
+  const originalKey = getDetectedKey(song);
+  const rec = recommendKeyForSinger(originalKey, profile);
+  transposeOffset = rec.shiftSemitones;
+  saveTranspose(song.id, transposeOffset);
+  updateSingerProfileWithKey(name, rec.recommendedKey);
+  closeOverlay('overlay-singer-picker');
+  renderSongView(song);
+  showToast(rec.needsTranspose
+    ? `${name}: ${rec.recommendedKey} (сдвиг ${rec.shiftSemitones > 0 ? '+' : ''}${rec.shiftSemitones})`
+    : `${name}: ${rec.recommendedKey} — без транспозиции`);
+}
+
+function renderSingerPickerList(song) {
+  const list = document.getElementById('singer-picker-list');
+  const names = Object.keys(singerProfiles);
+  if (!names.length) {
+    list.innerHTML = `<p style="color:var(--muted);font-size:14px;text-align:center;padding:20px">Добавьте первого солиста ниже</p>`;
+    return;
+  }
+  const originalKey = getDetectedKey(song);
+  list.innerHTML = names.map(name => {
+    const rec = recommendKeyForSinger(originalKey, singerProfiles[name]);
+    const metaText = !rec.needsTranspose
+      ? `уже комфортно · ${rec.recommendedKey}`
+      : `${originalKey} → ${rec.recommendedKey} (${rec.shiftSemitones > 0 ? '+' : ''}${rec.shiftSemitones})`;
+    return `<div class="setlist-card" data-name="${escapeHtml(name)}" style="display:flex;align-items:center;gap:10px">
+      <div style="flex:1;min-width:0;cursor:pointer" class="singer-row-body">
+        <div class="setlist-title">${escapeHtml(name)}</div>
+        <div class="setlist-meta">${metaText}${rec.lowConfidence ? ' · мало данных' : ''}</div>
+      </div>
+      <span class="reorder-btn remove-singer" data-name="${escapeHtml(name)}" aria-label="Удалить солиста" title="Удалить">✕</span>
+    </div>`;
+  }).join('');
+
+  list.querySelectorAll('.singer-row-body').forEach(body => {
+    body.addEventListener('click', () => applySingerTranspose(song, body.closest('.setlist-card').dataset.name));
+  });
+  list.querySelectorAll('.remove-singer').forEach(btn => {
+    btn.addEventListener('click', e => {
+      e.stopPropagation();
+      delete singerProfiles[btn.dataset.name];
+      saveSingerProfiles();
+      renderSingerPickerList(song);
+    });
+  });
+}
+
+function openSingerPicker(song) {
+  renderSingerPickerList(song);
+  openOverlay('overlay-singer-picker');
+  const addBtn = document.getElementById('add-singer-btn');
+  addBtn.onclick = () => {
+    const inp = document.getElementById('inp-new-singer');
+    const name = inp.value.trim();
+    if (!name) return;
+    if (singerProfiles[name]) { showToast('Такой солист уже есть'); return; }
+    const num = keyBareNum(getDetectedKey(song));
+    singerProfiles[name] = { keysSung: [], min: num, max: num };
+    saveSingerProfiles();
+    inp.value = '';
+    renderSingerPickerList(song);
+    showToast('Солист добавлен');
+  };
+}
 
 // ═══════════════════════════════════════════
 //  PARSE SONG
@@ -2809,6 +2994,8 @@ function applyPageUI(name) {
   const globalViewBtn = document.getElementById('global-view-btn');
   const headerTitle = document.getElementById('header-title');
   mainHeader.style.display = '';
+  const perfNavGlobal = document.getElementById('perf-nav-buttons');
+  if (perfNavGlobal && name !== 'song-view') perfNavGlobal.classList.remove('show');
 
   if (name === 'songs') {
     document.querySelector('.bottom-nav').style.display = '';
@@ -3010,6 +3197,30 @@ function renderSongView(song, animDir) {
     const total = setlistContext.songs.length;
     if (idx > 0) document.getElementById('snav-prev').addEventListener('click', () => navigateSetlistSong(-1));
     if (idx < total-1) document.getElementById('snav-next').addEventListener('click', () => navigateSetlistSong(1));
+  }
+
+  const perfNavEl = document.getElementById('perf-nav-buttons');
+  const perfActive = performanceMode && !!setlistContext;
+  document.getElementById('song-header').classList.toggle('perf-active', perfActive);
+  if (perfActive) {
+    const pIdx = setlistContext.index;
+    const pTotal = setlistContext.songs.length;
+    perfNavEl.innerHTML = `
+      <button class="perf-nav-btn ${pIdx > 0 ? '' : 'disabled'}" id="perf-prev" aria-label="Предыдущая песня">▲</button>
+      <div class="perf-nav-pos" id="perf-pos" title="Выключить режим выступления">${pIdx+1}/${pTotal}</div>
+      <button class="perf-nav-btn ${pIdx < pTotal-1 ? '' : 'disabled'}" id="perf-next" aria-label="Следующая песня">▼</button>
+    `;
+    perfNavEl.classList.add('show');
+    if (pIdx > 0) document.getElementById('perf-prev').addEventListener('click', () => navigateSetlistSong(-1));
+    if (pIdx < pTotal-1) document.getElementById('perf-next').addEventListener('click', () => navigateSetlistSong(1));
+    document.getElementById('perf-pos').addEventListener('click', () => {
+      performanceMode = false;
+      renderSongView(song);
+      showToast('Режим выступления выключен');
+    });
+  } else {
+    perfNavEl.classList.remove('show');
+    perfNavEl.innerHTML = '';
   }
 
   initSongSwipe();
@@ -3314,6 +3525,7 @@ function renderSetlistView(sl) {
       <div style="display:flex;align-items:center;gap:8px;">
         <div style="flex:1"><div class="song-view-artist">${liveSl.date || ''} · ${slSongs.length} песен</div></div>
         <button class="ctrl-btn" id="add-songs-btn" style="background:var(--accent);border-color:var(--accent);color:#fff" aria-label="Добавить песни">＋ Добавить</button>
+        <button class="icon-btn perf-mode-btn ${performanceMode ? 'active' : ''}" id="perf-mode-toggle" style="font-size:16px;flex-shrink:0" aria-label="Режим выступления" title="Режим выступления">🎤</button>
         <button class="icon-btn" id="edit-setlist-btn" style="font-size:16px;flex-shrink:0" title="Редактировать">✏️</button>
         <button class="icon-btn" id="sync-keys-btn" style="font-size:15px" aria-label="Синхронизировать тональности" title="Синхронизировать тональности с другими устройствами">📡</button>
         <button class="icon-btn" id="share-setlist-btn" aria-label="Поделиться" title="Поделиться списком">📤</button>
@@ -3367,6 +3579,11 @@ function renderSetlistView(sl) {
   });
 
   document.getElementById('add-songs-btn').addEventListener('click', () => openSongPicker(liveSl.id));
+  document.getElementById('perf-mode-toggle').addEventListener('click', () => {
+    performanceMode = !performanceMode;
+    showToast(performanceMode ? 'Режим выступления включён' : 'Режим выступления выключен');
+    renderSetlistView(liveSl);
+  });
   document.getElementById('edit-setlist-btn').addEventListener('click', () => openEditSetlistOverlay(liveSl));
 
   document.getElementById('sync-keys-btn').addEventListener('click', () => {
@@ -3579,7 +3796,7 @@ function showToastUndo(msg, cb) {
 async function fsGetSafe(docId) {
   try {
     const ctrl = new AbortController();
-    const timer = setTimeout(() => ctrl.abort(), 8000);
+    const timer = setTimeout(() => ctrl.abort(), 12000);
     const r = await fetch(`${FB_BASE}/${docId}?key=${FB_API_KEY}`, { signal: ctrl.signal });
     clearTimeout(timer);
     if (r.status === 404) return { notFound: true };
@@ -3594,7 +3811,7 @@ async function fsGetSafe(docId) {
 async function fsSetSafe(docId, data) {
   try {
     const ctrl = new AbortController();
-    const timer = setTimeout(() => ctrl.abort(), 8000);
+    const timer = setTimeout(() => ctrl.abort(), 12000);
     const fields = {};
     for (const k of Object.keys(data)) fields[k] = toFsValue(data[k]);
     const r = await fetch(`${FB_BASE}/${docId}?key=${FB_API_KEY}`, {
@@ -3612,7 +3829,7 @@ async function fsSetSafe(docId, data) {
 async function fsDeleteSafe(docId) {
   try {
     const ctrl = new AbortController();
-    const timer = setTimeout(() => ctrl.abort(), 8000);
+    const timer = setTimeout(() => ctrl.abort(), 12000);
     const r = await fetch(`${FB_BASE}/${docId}?key=${FB_API_KEY}`, {
       method: 'DELETE', signal: ctrl.signal
     });
@@ -3628,7 +3845,7 @@ async function fsDeleteSafe(docId) {
 function syncDocId(slId) { return 'keys_' + slId; }
 
 // Открыть drawer синхронизации для сет-листа
-async function openSyncDrawer(slId) {
+async function openSyncDrawer(slId, preloadedResult) {
   const sl = getSlById(slId);
   if (!sl) return;
   const songs = (sl.songs||[]).map(id => songsCache.find(s => s.id === id)).filter(Boolean);
@@ -3639,7 +3856,7 @@ async function openSyncDrawer(slId) {
   document.getElementById('sync-drawer-btns').innerHTML = '';
   openOverlay('overlay-sync-keys');
 
-  const result = await fsGetSafe(syncDocId(slId));
+  const result = preloadedResult || await fsGetSafe(syncDocId(slId));
 
   if (result.error) {
     const isOffline = !navigator.onLine;
@@ -3651,7 +3868,9 @@ async function openSyncDrawer(slId) {
         </div>
         <div style="font-size:12px;color:var(--muted)">${isOffline ? 'Проверьте интернет и попробуйте снова' : 'Ошибка: ' + result.error}</div>
       </div>`;
-    renderSyncBtns(null, slId, songs, null);
+    const btns = document.getElementById('sync-drawer-btns');
+    btns.innerHTML = '<button class="sync-btn-primary" id="sync-retry-btn" style="width:100%">🔄 Повторить</button>';
+    document.getElementById('sync-retry-btn').addEventListener('click', () => openSyncDrawer(slId));
     return;
   }
 
@@ -3782,10 +4001,6 @@ async function syncSingleSong(song, slId) {
   const docId = slId ? syncDocId(slId) : 'keys_song_' + song.id;
   const isSetlist = !!slId;
 
-  // Показываем индикатор на кнопке
-  const omSy = document.getElementById('om-sy');
-  if (omSy) omSy.textContent = '⏳ Синхронизация...';
-
   const result = await fsGetSafe(docId);
 
   if (result.error) {
@@ -3806,10 +4021,10 @@ async function syncSingleSong(song, slId) {
     return;
   }
 
-  // Есть данные на сервере — открываем drawer
+  // Есть данные на сервере — открываем drawer (переиспользуем уже полученный result)
   if (isSetlist) {
     const sl = getSlById(slId);
-    if (sl) openSyncDrawer(slId);
+    if (sl) openSyncDrawer(slId, result);
   } else {
     // Одиночная песня — маленький inline-диалог
     const remoteVal = remoteKeys ? Number(remoteKeys[song.id] ?? 0) : 0;
@@ -3866,6 +4081,7 @@ function showSongOverflowMenu(song, btnEl) {
   const m=document.createElement('div'); m.id='som'; m.className='overflow-menu';
   m.style.cssText='top:'+(r.bottom+6)+'px;right:'+(window.innerWidth-r.right)+'px';
   m.innerHTML='<div class="overflow-menu-item" id="om-sl">📋 Добавить в сет-лист</div>'
+    +'<div class="overflow-menu-item" id="om-si">🎤 Выбрать солиста</div>'
     +'<div class="overflow-menu-item" id="om-ed">✏️ Редактировать</div>'
     +'<div class="overflow-menu-item" id="om-pr">🖨 Распечатать / PDF</div>'
     +'<div class="overflow-menu-item" id="om-sy">📡 Синхронизировать тональности</div>';
@@ -3874,12 +4090,17 @@ function showSongOverflowMenu(song, btnEl) {
   const co=e=>{if(!m.contains(e.target)&&e.target!==btnEl){close();document.removeEventListener('click',co,true);}};
   setTimeout(()=>document.addEventListener('click',co,true),10);
   document.getElementById('om-sl').addEventListener('click',()=>{close();openPickSetlist(song.id);});
+  document.getElementById('om-si').addEventListener('click',()=>{close();openSingerPicker(song);});
   document.getElementById('om-ed').addEventListener('click',()=>{close();openEditSong(currentSongId);});
   document.getElementById('om-pr').addEventListener('click',()=>{close();printSong(song);});
-  document.getElementById('om-sy').addEventListener('click',()=>{
-    close();
+  document.getElementById('om-sy').addEventListener('click', e => {
+    e.stopPropagation();
+    const item = document.getElementById('om-sy');
+    item.textContent = '⏳ Синхронизация...';
+    item.style.pointerEvents = 'none';
+    item.style.opacity = '0.6';
     const slId = setlistContext ? setlistContext.slId : null;
-    syncSingleSong(song, slId);
+    syncSingleSong(song, slId).finally(close);
   });
 }
 
