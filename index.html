@@ -129,53 +129,54 @@
   body.theme-bw .sl-key-badge { color:#fff; border-color:rgba(255,255,255,0.2); background:rgba(255,255,255,0.07); }
   body.theme-bw .sl-all-transpose { background:rgba(255,255,255,0.06); border-color:rgba(255,255,255,0.12); }
 
-  /* ── GLASS THEME ── */
+  /* ── STAGE THEME (тёплая тёмная тема для сцены — минимум синего света,
+     высокий контраст для чтения аккордов в темноте зала) ── */
   body.theme-glass {
-    --bg:#d0d0d8; --bg2:rgba(210,210,220,0.85); --bg3:rgba(180,180,195,0.5);
-    --card:rgba(255,255,255,0.45); --border:rgba(0,0,0,0.08);
-    --accent:#1a1a2e; --accent2:#1a1a2e; --text:#111118; --muted:rgba(30,30,50,0.5);
-    --chord:#1a1a2e; --primary:#1a1a2e; --secondary:#2d2d4e; --tertiary:#3d3d6e;
-    --glass-bg:rgba(255,255,255,0.35); --glass-bg-hover:rgba(255,255,255,0.55);
-    --glass-border:rgba(255,255,255,0.55); --glass-shadow:0 8px 32px rgba(0,0,0,0.15);
+    --bg:#170f0a; --bg2:rgba(28,18,12,0.88); --bg3:rgba(255,180,90,0.16);
+    --card:rgba(255,190,120,0.05); --border:rgba(255,180,90,0.16);
+    --accent:#FFB454; --accent2:#FF9D3D; --text:#FFE9D2; --muted:rgba(255,214,170,0.5);
+    --chord:#FFB454; --primary:#FFB454; --secondary:#FF9D3D; --tertiary:#FF6B4A;
+    --glass-bg:rgba(255,190,120,0.07); --glass-bg-hover:rgba(255,190,120,0.13);
+    --glass-border:rgba(255,180,90,0.22); --glass-shadow:0 8px 32px rgba(0,0,0,0.55);
   }
-  body.theme-glass, html.theme-glass { background:#c8c8d8 !important; color:#111118 !important; }
+  body.theme-glass, html.theme-glass { background:#170f0a !important; color:#FFE9D2 !important; }
   body.theme-glass::before {
-    background: radial-gradient(ellipse 70% 60% at 20% 0%,rgba(255,255,255,0.5) 0%,transparent 60%),
-      radial-gradient(ellipse 60% 50% at 80% 100%,rgba(200,200,220,0.4) 0%,transparent 60%),
-      radial-gradient(ellipse 50% 40% at 50% 50%,rgba(230,230,245,0.3) 0%,transparent 60%);
+    background: radial-gradient(ellipse 70% 60% at 20% 0%,rgba(255,150,60,0.14) 0%,transparent 60%),
+      radial-gradient(ellipse 60% 50% at 80% 100%,rgba(255,100,40,0.10) 0%,transparent 60%),
+      radial-gradient(ellipse 50% 40% at 50% 50%,rgba(120,60,20,0.10) 0%,transparent 60%);
   }
-  body.theme-glass .bottom-nav { background:rgba(200,200,215,0.75); backdrop-filter:blur(30px) saturate(200%); -webkit-backdrop-filter:blur(30px) saturate(200%); border-top-color:rgba(255,255,255,0.6); }
-  body.theme-glass .header { background:rgba(210,210,225,0.7); backdrop-filter:blur(30px) saturate(200%); -webkit-backdrop-filter:blur(30px) saturate(200%); border-bottom-color:rgba(255,255,255,0.6); }
-  body.theme-glass .header-title span { background:linear-gradient(135deg,#1a1a2e,#4a4a8e); -webkit-background-clip:text; background-clip:text; }
-  body.theme-glass .song-view-header { background:rgba(210,210,225,0.7); backdrop-filter:blur(24px); -webkit-backdrop-filter:blur(24px); border-bottom-color:rgba(255,255,255,0.5); }
-  body.theme-glass .drawer { background:rgba(225,225,235,0.88); backdrop-filter:blur(40px) saturate(180%); -webkit-backdrop-filter:blur(40px) saturate(180%); border-color:rgba(255,255,255,0.65); }
-  body.theme-glass .fab { background:rgba(26,26,46,0.85); color:#fff; box-shadow:0 4px 20px rgba(0,0,0,0.25); }
-  body.theme-glass .btn-primary { background:rgba(26,26,46,0.85); box-shadow:0 4px 16px rgba(0,0,0,0.2); }
-  body.theme-glass .chord-badge { background:rgba(26,26,46,0.1); border-color:rgba(26,26,46,0.2); color:#1a1a2e; }
-  body.theme-glass .tag { background:rgba(26,26,46,0.08); color:#1a1a2e; border-color:rgba(26,26,46,0.15); }
-  body.theme-glass .song-card-key { background:rgba(26,26,46,0.08); color:#1a1a2e; border-color:rgba(26,26,46,0.15); }
-  body.theme-glass .nav-btn { color:rgba(26,26,46,0.45); }
-  body.theme-glass .nav-btn.active { color:#1a1a2e; }
-  body.theme-glass .song-card { background:rgba(255,255,255,0.4); border-color:rgba(255,255,255,0.6); }
-  body.theme-glass .setlist-card { background:rgba(255,255,255,0.4); border-color:rgba(255,255,255,0.6); }
-  body.theme-glass .setlist-song-item { background:rgba(255,255,255,0.4); border-color:rgba(255,255,255,0.6); }
-  body.theme-glass .song-card-block, body.theme-glass .chords-only-block { background:rgba(255,255,255,0.3); border-color:rgba(255,255,255,0.5); }
-  body.theme-glass .transpose-block, body.theme-glass .ctrl-btn, body.theme-glass #song-view-mode-btn { background:rgba(255,255,255,0.4); border-color:rgba(255,255,255,0.6); color:#111118; }
-  body.theme-glass .icon-btn { background:rgba(255,255,255,0.4); border-color:rgba(255,255,255,0.6); color:#111118; }
-  body.theme-glass .search-input { background:rgba(255,255,255,0.4); border-color:rgba(255,255,255,0.6); color:#111118; }
-  body.theme-glass .form-input, body.theme-glass .form-textarea, body.theme-glass .form-select { background:rgba(255,255,255,0.45); border-color:rgba(255,255,255,0.6); color:#111118; }
-  body.theme-glass .chip { background:rgba(255,255,255,0.4); color:rgba(26,26,46,0.6); border-color:rgba(255,255,255,0.5); }
-  body.theme-glass .chip.selected { background:rgba(26,26,46,0.15); border-color:rgba(26,26,46,0.3); color:#1a1a2e; }
-  body.theme-glass .import-tabs { background:rgba(255,255,255,0.3); border-color:rgba(255,255,255,0.5); }
-  body.theme-glass .import-tab.active { background:rgba(26,26,46,0.12); color:#1a1a2e; }
-  body.theme-glass .hint-box { background:rgba(255,255,255,0.3); border-color:rgba(255,255,255,0.5); }
-  body.theme-glass .hint-box strong { color:#1a1a2e; }
-  body.theme-glass .toast { background:rgba(255,255,255,0.7); border-color:rgba(255,255,255,0.8); color:#111118; }
-  body.theme-glass .drawer-handle { background:rgba(26,26,46,0.2); }
-  body.theme-glass .drawer-close { background:rgba(26,26,46,0.08); border-color:rgba(26,26,46,0.15); color:#111118; }
-  body.theme-glass .storage-info, body.theme-glass .json-song-row { background:rgba(255,255,255,0.35); border-color:rgba(255,255,255,0.5); }
-  body.theme-glass .setlist-nav-bar { background:rgba(255,255,255,0.4); border-color:rgba(255,255,255,0.6); }
-  body.theme-glass code { color:#1a1a2e; }
+  body.theme-glass .bottom-nav { background:rgba(20,13,9,0.85); backdrop-filter:blur(30px) saturate(160%); -webkit-backdrop-filter:blur(30px) saturate(160%); border-top-color:rgba(255,180,90,0.18); }
+  body.theme-glass .header { background:rgba(23,15,10,0.8); backdrop-filter:blur(30px) saturate(160%); -webkit-backdrop-filter:blur(30px) saturate(160%); border-bottom-color:rgba(255,180,90,0.18); }
+  body.theme-glass .header-title span { background:linear-gradient(135deg,#FFB454,#FF6B4A); -webkit-background-clip:text; background-clip:text; }
+  body.theme-glass .song-view-header { background:rgba(23,15,10,0.82); backdrop-filter:blur(24px); -webkit-backdrop-filter:blur(24px); border-bottom-color:rgba(255,180,90,0.16); }
+  body.theme-glass .drawer { background:rgba(24,16,11,0.95); backdrop-filter:blur(40px) saturate(160%); -webkit-backdrop-filter:blur(40px) saturate(160%); border-color:rgba(255,180,90,0.2); }
+  body.theme-glass .fab { background:linear-gradient(135deg,#FFB454,#FF9D3D,#FF6B4A); color:#1a0f08; box-shadow:0 4px 20px rgba(255,150,60,0.35); }
+  body.theme-glass .btn-primary { background:linear-gradient(135deg,#FFB454,#FF9D3D,#FF6B4A); color:#1a0f08; box-shadow:0 4px 16px rgba(255,150,60,0.3); }
+  body.theme-glass .chord-badge { background:rgba(255,180,90,0.12); border-color:rgba(255,180,90,0.3); color:#FFB454; }
+  body.theme-glass .tag { background:rgba(255,180,90,0.1); color:#FFCB8A; border-color:rgba(255,180,90,0.22); }
+  body.theme-glass .song-card-key { background:rgba(255,180,90,0.1); color:#FFB454; border-color:rgba(255,180,90,0.22); }
+  body.theme-glass .nav-btn { color:rgba(255,214,170,0.4); }
+  body.theme-glass .nav-btn.active { color:#FFB454; }
+  body.theme-glass .song-card { background:rgba(255,190,120,0.055); border-color:rgba(255,180,90,0.16); }
+  body.theme-glass .setlist-card { background:rgba(255,190,120,0.055); border-color:rgba(255,180,90,0.16); }
+  body.theme-glass .setlist-song-item { background:rgba(255,190,120,0.055); border-color:rgba(255,180,90,0.16); }
+  body.theme-glass .song-card-block, body.theme-glass .chords-only-block { background:rgba(255,190,120,0.04); border-color:rgba(255,180,90,0.14); }
+  body.theme-glass .transpose-block, body.theme-glass .ctrl-btn, body.theme-glass #song-view-mode-btn { background:rgba(255,190,120,0.07); border-color:rgba(255,180,90,0.2); color:#FFE9D2; }
+  body.theme-glass .icon-btn { background:rgba(255,190,120,0.07); border-color:rgba(255,180,90,0.2); color:#FFE9D2; }
+  body.theme-glass .search-input { background:rgba(255,190,120,0.06); border-color:rgba(255,180,90,0.18); color:#FFE9D2; }
+  body.theme-glass .form-input, body.theme-glass .form-textarea, body.theme-glass .form-select { background:rgba(255,190,120,0.07); border-color:rgba(255,180,90,0.2); color:#FFE9D2; }
+  body.theme-glass .chip { background:rgba(255,190,120,0.06); color:rgba(255,214,170,0.7); border-color:rgba(255,180,90,0.18); }
+  body.theme-glass .chip.selected { background:rgba(255,180,90,0.2); border-color:rgba(255,180,90,0.45); color:#FFB454; }
+  body.theme-glass .import-tabs { background:rgba(255,190,120,0.05); border-color:rgba(255,180,90,0.16); }
+  body.theme-glass .import-tab.active { background:rgba(255,180,90,0.15); color:#FFB454; }
+  body.theme-glass .hint-box { background:rgba(255,190,120,0.05); border-color:rgba(255,180,90,0.16); }
+  body.theme-glass .hint-box strong { color:#FFB454; }
+  body.theme-glass .toast { background:rgba(30,20,14,0.92); border-color:rgba(255,180,90,0.3); color:#FFE9D2; }
+  body.theme-glass .drawer-handle { background:rgba(255,180,90,0.25); }
+  body.theme-glass .drawer-close { background:rgba(255,180,90,0.1); border-color:rgba(255,180,90,0.2); color:#FFE9D2; }
+  body.theme-glass .storage-info, body.theme-glass .json-song-row { background:rgba(255,190,120,0.05); border-color:rgba(255,180,90,0.16); }
+  body.theme-glass .setlist-nav-bar { background:rgba(255,190,120,0.06); border-color:rgba(255,180,90,0.2); }
+  body.theme-glass code { color:#FFB454; }
 
   * { margin:0; padding:0; box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
   html { scroll-padding-top:60px; }
@@ -341,7 +342,10 @@
   .song-view-header {
     background:rgba(13,13,18,0.6); backdrop-filter:blur(20px); -webkit-backdrop-filter:blur(20px);
     border-bottom:1px solid var(--glass-border); padding:10px 12px;
+    position:sticky; top:var(--header-height, 64px); z-index:15;
+    transition:transform 0.25s ease;
   }
+  .song-view-header.sv-hidden { transform:translateY(-100%); }
   .song-view-controls-wrap {
     overflow-x:auto; overflow-y:hidden; -webkit-overflow-scrolling:touch;
     scrollbar-width:none; padding:0 16px 2px; margin:0 -16px;
@@ -461,6 +465,14 @@
   .song-card-block.block-collapsed .block-chords,
   .chords-only-block.block-collapsed .chords-only-rows-wrap { display:none; }
   .block-chords { display:flex; flex-direction:column; gap:3px; }
+
+  /* ── DENSITY: КОМПАКТНЫЙ РЕЖИМ ── */
+  body.density-compact .song-card-block, body.density-compact .chords-only-block { padding:1px 8px 2px 12px !important; margin-bottom:1px !important; }
+  body.density-compact .block-chords { gap:2px !important; }
+  body.density-compact .chord-badge { padding:1px 6px !important; }
+  body.density-compact .lyric-line { line-height:1.28 !important; }
+  body.density-compact .chords-only-row { margin-bottom:3px !important; }
+  body.density-compact .group-repeat-block { margin-bottom:3px !important; }
   .chord-row { display:flex; flex-wrap:wrap; gap:3px; margin-bottom:1px; }
 
   .chords-only-block {
@@ -736,8 +748,10 @@
   .perf-nav-btn:active { background:rgba(183,148,255,0.35); }
   .perf-nav-btn.disabled { opacity:0.3; pointer-events:none; }
   .perf-nav-pos {
-    font-family:'SF Mono','Fira Code','Courier New',monospace; font-size:10px;
-    text-align:center; opacity:0.5; cursor:pointer; padding:2px 4px; user-select:none;
+    font-family:'SF Mono','Fira Code','Courier New',monospace; font-size:16px; font-weight:800;
+    text-align:center; opacity:1; color:#fff; cursor:pointer; user-select:none;
+    padding:4px 7px; border-radius:8px; background:rgba(24,22,32,0.6);
+    text-shadow:0 1px 3px rgba(0,0,0,0.7);
   }
 
   .import-tabs {
@@ -1006,8 +1020,8 @@
   body.theme-bw .overflow-menu { background:rgba(20,20,20,0.99); border-color:rgba(255,255,255,0.15); }
   body.theme-white .overflow-menu { background:rgba(250,248,255,0.99); border-color:rgba(123,92,245,0.2); }
   body.theme-white .overflow-menu-item { color:#1C1333; }
-  body.theme-glass .overflow-menu { background:rgba(225,225,235,0.97); }
-  body.theme-glass .overflow-menu-item { color:#111118; }
+  body.theme-glass .overflow-menu { background:rgba(26,17,12,0.97); border-color:rgba(255,180,90,0.2); }
+  body.theme-glass .overflow-menu-item { color:#FFE9D2; }
 
   /* ── CHORDS-ONLY BLOCK: горизонтальный layout ── */
   .chords-only-rows-wrap { display:flex; flex-direction:column; gap:1px; flex:1; }
@@ -1051,8 +1065,9 @@
     border-color:rgba(255,255,255,0.18) !important;
   }
   body.theme-glass .song-content.mode-chords .chord-badge {
-    background:rgba(26,26,46,0.09) !important;
-    border-color:rgba(26,26,46,0.18) !important;
+    background:rgba(255,180,90,0.14) !important;
+    border-color:rgba(255,180,90,0.32) !important;
+    color:#FFB454 !important;
   }
   .song-content.mode-chords .chords-only-row {
     display:flex; flex-wrap:wrap; gap:3px; align-items:center;
@@ -1869,6 +1884,11 @@ function saveTranspose(songId, offset) {
   LS.set('cb_transpose', transposeMap);
 }
 
+// Нотация (диезы/бемоли) — за каждой песней закреплена отдельно, только на этом устройстве
+const notationMap = LS.get('cb_notation_map', {});
+function saveNotationMap() { LS.set('cb_notation_map', notationMap); }
+function getSongNotation(songId) { return notationMap[songId] || null; } // null = как введено изначально
+
 // ═══════════════════════════════════════════
 //  FIREBASE SYNC
 // ═══════════════════════════════════════════
@@ -1968,6 +1988,17 @@ window.addEventListener('online', async () => {
 
 window.addEventListener('offline', () => { showSyncStatus('📴 Оффлайн'); setTimeout(hideSyncStatus, 3000); });
 
+let _resizeColResizeTimer = null;
+window.addEventListener('resize', () => {
+  clearTimeout(_resizeColResizeTimer);
+  _resizeColResizeTimer = setTimeout(() => {
+    if (currentPage === 'song-view' && currentSongId) {
+      const song = songsCache.find(s => s.id === currentSongId);
+      if (song) { invalidateSongCache(song.id); renderSongView(song); }
+    }
+  }, 200);
+});
+
 function showSyncStatus(msg) {
   let el = document.getElementById('sync-status');
   if (!el) {
@@ -2060,34 +2091,35 @@ function normalizeNote(n) {
   const flat2sharp = { Db:'C#', Eb:'D#', Fb:'E', Gb:'F#', Ab:'G#', Bb:'A#', Cb:'B', H:'B' };
   return flat2sharp[n] || n;
 }
-function transposeSingleNote(root, semitones) {
+const NOTES_FLAT = ['C','Db','D','Eb','E','F','Gb','G','Ab','A','Bb','B'];
+function transposeSingleNote(root, semitones, notation) {
   const norm = normalizeNote(root);
   const idx = NOTES.indexOf(norm);
   if (idx === -1) return root;
   const newIdx = ((idx + semitones) % 12 + 12) % 12;
-  return NOTES[newIdx];
+  return (notation === 'flat' ? NOTES_FLAT : NOTES)[newIdx];
 }
-function transposeChord(chord, semitones) {
-  if (semitones === 0) return chord;
+function transposeChord(chord, semitones, notation) {
+  if (semitones === 0 && !notation) return chord;
   if (chord.includes('/')) {
     const slashIdx = chord.lastIndexOf('/');
     const main = chord.slice(0, slashIdx);
     const bass = chord.slice(slashIdx + 1);
-    return transposeChord(main, semitones) + '/' + transposeChord(bass, semitones);
+    return transposeChord(main, semitones, notation) + '/' + transposeChord(bass, semitones, notation);
   }
   return chord.replace(/([A-H][b#]?)((?:maj7?|maj|min|m|dim|aug|sus[24]?|add\d+|\d+)*)/g, (match, root, quality) => {
-    return transposeSingleNote(root, semitones) + quality;
+    return transposeSingleNote(root, semitones, notation) + quality;
   });
 }
-function transposeLyrics(text, semitones) {
-  if (semitones === 0) return text;
+function transposeLyrics(text, semitones, notation) {
+  if (semitones === 0 && !notation) return text;
   return text.replace(/\[([^\]]+)\]/g, (full, inner) => {
     if (isBlockLabel(inner)) return full;
-    return `[${transposeChord(inner, semitones)}]`;
+    return `[${transposeChord(inner, semitones, notation)}]`;
   });
 }
 function getTransposeLabel(n) { return n === 0 ? 'Ориг.' : (n > 0 ? '+' : '') + n; }
-function transposeKey(key, semitones) { return transposeChord(key, semitones); }
+function transposeKey(key, semitones, notation) { return transposeChord(key, semitones, notation); }
 
 // ═══════════════════════════════════════════
 //  SINGER PROFILES / TRANSPOSE RECOMMENDATION
@@ -2255,7 +2287,7 @@ function isBlockLabel(text) {
   return false;
 }
 
-function parseSong(rawLyrics, transpose) {
+function parseSong(rawLyrics, transpose, notation) {
   let lyrics = rawLyrics || '';
   const trimmed = lyrics.trim();
   if (trimmed.startsWith('{') || trimmed.startsWith('[{')) {
@@ -2267,7 +2299,7 @@ function parseSong(rawLyrics, transpose) {
       }
     } catch(e) {}
   }
-  const transposed = transposeLyrics(lyrics, transpose);
+  const transposed = transposeLyrics(lyrics, transpose, notation);
   const lines = transposed.split('\n');
   const blocks = [];
   let current = { label: '', lines: [] };
@@ -2563,12 +2595,6 @@ function optimizeBlock(blockLines) {
         continue;
       }
     }
-    if (chords.length >= 4) {
-      for (let j = 0; j < chords.length; j += 4) {
-        expandedChunks.push(chords.slice(j, Math.min(j + 4, chords.length)));
-      }
-      continue;
-    }
     expandedChunks.push(chords);
   }
 
@@ -2614,13 +2640,6 @@ function optimizeBlock(blockLines) {
     let mul = 1;
     while (ci + mul < pairC.length && pairC[ci + mul].type === 'single' && eq(current, pairC[ci + mul].chords)) mul++;
     if (mul > 1) { result.push({ type: 'single', chords: current, multiplier: mul }); ci += mul; continue; }
-    if (next && next.type === 'single' && isPassage(current, next.chords)) {
-      const afterPassage = pairC[ci + 2];
-      if (!afterPassage || !eq(afterPassage.chords, current)) {
-        result.push({ type: 'single', chords: current, multiplier: 1, passage: next.chords[next.chords.length - 1] });
-        ci += 2; continue;
-      }
-    }
     result.push({ type: 'single', chords: current, multiplier: 1 });
     ci++;
   }
@@ -2772,12 +2791,21 @@ function wrapTwoColumns(blocks, leftHtmlArr, rightHtmlArr) {
   return `<div class="song-two-col"><div class="song-col">${leftHtml}</div><div class="song-col">${rightHtml}</div></div>`;
 }
 
+// Две колонки разрешены на широких экранах (≥640px), а также в горизонтальной
+// ориентации на телефоне — там ширины обычно достаточно для двух колонок,
+// даже если она формально меньше 640px.
+function twoColAllowed() {
+  if (window.innerWidth >= 640) return true;
+  const isLandscape = window.matchMedia && window.matchMedia('(orientation: landscape)').matches;
+  return !!isLandscape && window.innerWidth >= 480;
+}
+
 function splitBlocksToColumns(blocks, renderBlock) {
   const TWO_COL_THRESHOLD = 23;
   const htmlBlocks = blocks.map((b, i) => ({ html: renderBlock(b, i), lines: countBlockLines(b) }))
     .filter(x => x.html);
   let total = htmlBlocks.reduce((s, x) => s + x.lines, 0);
-  if (total <= TWO_COL_THRESHOLD || window.innerWidth < 640) {
+  if (total <= TWO_COL_THRESHOLD || !twoColAllowed()) {
     return htmlBlocks.map(x => x.html).join('');
   }
   // Набираем левую колонку пока сумма ≤ 23
@@ -2796,9 +2824,10 @@ function splitBlocksToColumns(blocks, renderBlock) {
 }
 
 function renderSongContent(song, transpose) {
-  const cacheKey = song.id + ':' + transpose;
+  const notation = getSongNotation(song.id);
+  const cacheKey = song.id + ':' + transpose + ':' + (notation || 'x');
   if (_renderCache.has(cacheKey)) return _renderCache.get(cacheKey);
-  const blocks = parseSong(song.lyrics, transpose);
+  const blocks = parseSong(song.lyrics, transpose, notation);
 
   // Режим "только аккорды" — свой рендер, двух-колоночная логика не применяется
   // (chords-only блоки компактные, там другая структура)
@@ -2935,7 +2964,7 @@ const VIRTUAL = (() => {
 function renderSongCard(s) {
   const offset = transposeMap[s.id] || 0;
   const keyDisplay = offset
-    ? transposeKey(s.key || 'C', offset) + `<span style="font-size:9px;opacity:.7;margin-left:2px">(${offset > 0 ? '+' : ''}${offset})</span>`
+    ? transposeKey(s.key || 'C', offset, getSongNotation(s.id)) + `<span style="font-size:9px;opacity:.7;margin-left:2px">(${offset > 0 ? '+' : ''}${offset})</span>`
     : (s.key || '?');
   const tagsHtml = (s.tags || []).map(t =>
     `<span class="tag" style="cursor:pointer" onclick="event.stopPropagation();setTagFilter('${escapeHtml(t)}')">${escapeHtml(t)}</span>`
@@ -3114,7 +3143,7 @@ function _openSongDo(song, ctx) {
 let _swipeController = null;
 
 function renderSongView(song, animDir) {
-  const currentKey = transposeKey(getDetectedKey(song), transposeOffset);
+  const currentKey = transposeKey(getDetectedKey(song), transposeOffset, getSongNotation(song.id));
   const headerTitle = document.getElementById('header-title');
   if (headerTitle) headerTitle.innerHTML = `<span style="font-size:15px;font-weight:800">${escapeHtml(song.title)}</span>`;
 
@@ -3227,6 +3256,41 @@ function renderSongView(song, animDir) {
   initSongSwipe();
   initBlockCollapse(song);
   window.scrollTo(0, 0);
+  const _svHeaderEl = document.getElementById('song-header');
+  if (_svHeaderEl) _svHeaderEl.classList.remove('sv-hidden');
+  _svHeaderHidden = false;
+  _svStartWatch();
+}
+
+// ── AUTO-HIDE ПАНЕЛИ УПРАВЛЕНИЯ ПРИ СКРОЛЛЕ (как в читалках) ──
+// Раньше это было завязано на событие 'scroll', но браузеры (особенно
+// Telegram WebView) присылают его нерегулярно — то часто, то пачкой в конце
+// жеста, то вообще один раз на весь свайп. Из-за этого скрытие срабатывало
+// через раз. requestAnimationFrame сэмплирует scrollY на каждый кадр сам,
+// независимо от того, как хост решил доставлять scroll-события — надёжно.
+let _svRafId = null;
+let _svLastScrollY = 0;
+let _svHeaderHidden = false;
+function _svTick() {
+  if (currentPage !== 'song-view') { _svRafId = null; return; }
+  const header = document.getElementById('song-header');
+  if (header) {
+    const y = window.scrollY || window.pageYOffset || 0;
+    const delta = y - _svLastScrollY;
+    if (y < 40) {
+      if (_svHeaderHidden) { header.classList.remove('sv-hidden'); _svHeaderHidden = false; }
+    } else if (delta > 4 && !_svHeaderHidden) {
+      header.classList.add('sv-hidden'); _svHeaderHidden = true;
+    } else if (delta < -4 && _svHeaderHidden) {
+      header.classList.remove('sv-hidden'); _svHeaderHidden = false;
+    }
+    _svLastScrollY = y;
+  }
+  _svRafId = requestAnimationFrame(_svTick);
+}
+function _svStartWatch() {
+  _svLastScrollY = window.scrollY || window.pageYOffset || 0;
+  if (_svRafId == null) _svRafId = requestAnimationFrame(_svTick);
 }
 
 function navigateSetlistSong(dir, swipeAnim) {
@@ -3536,7 +3600,7 @@ function renderSetlistView(sl) {
         ? `<div class="empty" style="padding:32px 0"><div class="empty-icon">🎵</div><p>Нажмите «＋ Добавить» чтобы добавить песни</p></div>`
         : slSongs.map((s,i) => {
             const offset = transposeMap[s.id] || 0;
-            const displayKey = offset ? transposeKey(s.key||'C', offset) : (s.key||'?');
+            const displayKey = offset ? transposeKey(s.key||'C', offset, getSongNotation(s.id)) : (s.key||'?');
             const offsetLabel = offset ? ` <span style="font-size:10px;color:var(--muted)">(${offset>0?'+':''}${offset})</span>` : '';
             return `<div class="setlist-song-item" data-song-id="${s.id}" data-sl-idx="${i}">
               <span class="drag-handle" aria-label="Перетащить">☰</span>
@@ -3881,8 +3945,8 @@ function renderSyncBody(remote, slId, songs) {
   for (const s of songs) {
     const local = transposeMap[s.id] || 0;
     const remoteVal = remoteKeys ? (remoteKeys[s.id] !== undefined ? Number(remoteKeys[s.id]) : null) : null;
-    const localKey = transposeKey(s.key || 'C', local);
-    const remoteKey = remoteVal !== null ? transposeKey(s.key || 'C', remoteVal) : null;
+    const localKey = transposeKey(s.key || 'C', local, getSongNotation(s.id));
+    const remoteKey = remoteVal !== null ? transposeKey(s.key || 'C', remoteVal, getSongNotation(s.id)) : null;
 
     let dotClass, statusText;
     if (remoteVal === null) {
@@ -4006,8 +4070,8 @@ async function syncSingleSong(song, slId) {
   } else {
     // Одиночная песня — маленький inline-диалог
     const remoteVal = remoteKeys ? Number(remoteKeys[song.id] ?? 0) : 0;
-    const localKey = transposeKey(song.key || 'C', transposeOffset);
-    const remoteKey = transposeKey(song.key || 'C', remoteVal);
+    const localKey = transposeKey(song.key || 'C', transposeOffset, getSongNotation(song.id));
+    const remoteKey = transposeKey(song.key || 'C', remoteVal, getSongNotation(song.id));
     const ts = Number(remote.ts);
     const diff = Math.max(0, Math.round((Date.now() - ts) / 60000));
     const timeStr = diff < 1 ? 'только что' : diff + ' мин. назад';
@@ -4058,8 +4122,11 @@ function showSongOverflowMenu(song, btnEl) {
   const r=btnEl.getBoundingClientRect();
   const m=document.createElement('div'); m.id='som'; m.className='overflow-menu';
   m.style.cssText='top:'+(r.bottom+6)+'px;right:'+(window.innerWidth-r.right)+'px';
+  const _curNotation = getSongNotation(song.id);
+  const _notationLabel = _curNotation === 'flat' ? '♯ Показывать диезы' : '♭ Показывать бемоли';
   m.innerHTML='<div class="overflow-menu-item" id="om-sl">📋 Добавить в сет-лист</div>'
     +'<div class="overflow-menu-item" id="om-si">🎤 Выбрать солиста</div>'
+    +'<div class="overflow-menu-item" id="om-nt">'+_notationLabel+'</div>'
     +'<div class="overflow-menu-item" id="om-ed">✏️ Редактировать</div>'
     +'<div class="overflow-menu-item" id="om-pr">🖨 Распечатать / PDF</div>'
     +'<div class="overflow-menu-item" id="om-sy">📡 Синхронизировать тональности</div>';
@@ -4069,6 +4136,16 @@ function showSongOverflowMenu(song, btnEl) {
   setTimeout(()=>document.addEventListener('click',co,true),10);
   document.getElementById('om-sl').addEventListener('click',()=>{close();openPickSetlist(song.id);});
   document.getElementById('om-si').addEventListener('click',()=>{close();openSingerPicker(song);});
+  document.getElementById('om-nt').addEventListener('click',()=>{
+    close();
+    const cur = getSongNotation(song.id);
+    const next = cur === 'flat' ? 'sharp' : 'flat';
+    notationMap[song.id] = next;
+    saveNotationMap();
+    invalidateSongCache(song.id);
+    renderSongView(song);
+    showToast(next === 'flat' ? '♭ Бемоли для этой песни' : '♯ Диезы для этой песни');
+  });
   document.getElementById('om-ed').addEventListener('click',()=>{close();openEditSong(currentSongId);});
   document.getElementById('om-pr').addEventListener('click',()=>{close();printSong(song);});
   document.getElementById('om-sy').addEventListener('click', e => {
@@ -4690,12 +4767,20 @@ function changeFontSize(dir) { fontSizeIdx = Math.max(0, Math.min(FONT_SIZES.len
 applyFontSize();
 
 // ═══════════════════════════════════════════
+//  DENSITY (плотность блоков внутри песни)
+// ═══════════════════════════════════════════
+const DENSITY_KEY = 'cb_density';
+let densityMode = LS.get(DENSITY_KEY, 'normal');
+function applyDensityMode() { document.body.classList.toggle('density-compact', densityMode === 'compact'); }
+applyDensityMode();
+
+// ═══════════════════════════════════════════
 //  THEME
 // ═══════════════════════════════════════════
 const THEME_KEY = 'cb_theme';
 function applyTheme(theme) {
   document.body.classList.remove('theme-white','theme-bw','theme-glass','theme-print');
-  const icons = { dark:'🌙', white:'☀️', bw:'⬛', glass:'🪟', print:'🎼' };
+  const icons = { dark:'🌙', white:'☀️', bw:'⬛', glass:'🕯', print:'🎼' };
   if (theme !== 'dark') document.body.classList.add('theme-'+theme);
   document.getElementById('theme-btn').textContent = icons[theme] || '🌙';
 }
@@ -4706,7 +4791,7 @@ document.getElementById('theme-btn').addEventListener('click', () => {
   const next = themes[(themes.indexOf(cur)+1) % themes.length];
   LS.set(THEME_KEY, next);
   applyTheme(next);
-  const names = { dark:'🌙 Тёмная', white:'☀️ Светлая', bw:'⬛ Ч/Б', glass:'🪟 Стекло', print:'🎼 Репетиция' };
+  const names = { dark:'🌙 Тёмная', white:'☀️ Светлая', bw:'⬛ Ч/Б', glass:'🕯 Сцена', print:'🎼 Репетиция' };
   showToast(names[next]);
 });
 
@@ -4805,7 +4890,15 @@ function updateSettingsUI() {
     btn.style.borderColor = active ? 'rgba(183,148,255,0.6)' : '';
     btn.style.color = active ? 'var(--primary)' : '';
   });
+  document.querySelectorAll('.settings-density-btn').forEach(btn => {
+    const active = btn.dataset.density === densityMode;
+    btn.style.borderColor = active ? 'rgba(183,148,255,0.6)' : '';
+    btn.style.color = active ? 'var(--primary)' : '';
+  });
 }
+document.querySelectorAll('.settings-density-btn').forEach(btn => {
+  btn.addEventListener('click', () => { densityMode = btn.dataset.density; LS.set(DENSITY_KEY, densityMode); applyDensityMode(); updateSettingsUI(); });
+});
 
 document.getElementById('settings-nav-btn').addEventListener('click', () => { updateSettingsUI(); openOverlay('overlay-settings'); });
 
@@ -4991,7 +5084,7 @@ document.getElementById('delete-sl-btn').addEventListener('click', async () => {
       <button class="settings-theme-btn ctrl-btn" data-theme="dark" style="flex:1;min-width:calc(50% - 4px);height:44px;justify-content:center;font-size:13px" aria-label="Тёмная тема">🌙 Тёмная</button>
       <button class="settings-theme-btn ctrl-btn" data-theme="white" style="flex:1;min-width:calc(50% - 4px);height:44px;justify-content:center;font-size:13px" aria-label="Светлая тема">☀️ Светлая</button>
       <button class="settings-theme-btn ctrl-btn" data-theme="bw" style="flex:1;min-width:calc(50% - 4px);height:44px;justify-content:center;font-size:13px" aria-label="Чёрно-белая тема">⬛ Ч/Б</button>
-      <button class="settings-theme-btn ctrl-btn" data-theme="glass" style="flex:1;min-width:calc(50% - 4px);height:44px;justify-content:center;font-size:13px" aria-label="Стеклянная тема">🪟 Стекло</button>
+      <button class="settings-theme-btn ctrl-btn" data-theme="glass" style="flex:1;min-width:calc(50% - 4px);height:44px;justify-content:center;font-size:13px" aria-label="Тема Сцена">🕯 Сцена</button>
       <button class="settings-theme-btn ctrl-btn" data-theme="print" style="flex:1;min-width:calc(50% - 4px);height:44px;justify-content:center;font-size:13px" aria-label="Репетиция">🎼 Репетиция</button>
     </div>
     <div class="section-header">Режим по умолчанию</div>
@@ -5004,6 +5097,11 @@ document.getElementById('delete-sl-btn').addEventListener('click', async () => {
     <div style="display:flex;gap:10px;margin-bottom:18px">
       <button class="settings-notation-btn ctrl-btn" data-notation="sharp" style="flex:1;height:40px;justify-content:center;font-size:13px" aria-label="Диезы">♯ Диезы</button>
       <button class="settings-notation-btn ctrl-btn" data-notation="flat" style="flex:1;height:40px;justify-content:center;font-size:13px" aria-label="Бемоли">♭ Бемоли</button>
+    </div>
+    <div class="section-header">Плотность</div>
+    <div style="display:flex;gap:10px;margin-bottom:18px">
+      <button class="settings-density-btn ctrl-btn" data-density="normal" style="flex:1;height:40px;justify-content:center;font-size:13px" aria-label="Обычная плотность">Обычная</button>
+      <button class="settings-density-btn ctrl-btn" data-density="compact" style="flex:1;height:40px;justify-content:center;font-size:13px" aria-label="Компактная плотность">Компактная</button>
     </div>
     <div class="section-header">Безопасность</div>
     <div class="hint-box" style="margin-bottom:8px;font-size:11px">
@@ -5200,7 +5298,7 @@ async function saveInlineEdit(song) {
 // чтобы пользователю не приходилось гадать, что вписывать вместо плейсхолдера.
 function _ieCurrentTonic() {
   if (!_inlineEditSong) return 'C';
-  return transposeKey(getDetectedKey(_inlineEditSong), transposeOffset);
+  return transposeKey(getDetectedKey(_inlineEditSong), transposeOffset, getSongNotation(_inlineEditSong.id));
 }
 
 // ════════════════════════════════════
