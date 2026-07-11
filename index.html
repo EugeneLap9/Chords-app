@@ -3268,29 +3268,36 @@ function renderSongView(song, animDir) {
 // жеста, то вообще один раз на весь свайп. Из-за этого скрытие срабатывало
 // через раз. requestAnimationFrame сэмплирует scrollY на каждый кадр сам,
 // независимо от того, как хост решил доставлять scroll-события — надёжно.
-let _svRafId = null;
+// Цикл всегда крутится сам по себе (стоит копейки — одно чтение scrollY
+// и сравнение строки за кадр) и НИКОГДА не завершается сам по себе.
+// Раньше он проверял currentPage и обнулял себя, если страница ещё не
+// 'song-view' — но showPage() переключает currentPage с задержкой ~180мс
+// (анимация), а requestAnimationFrame успевал сработать раньше и убивал
+// цикл до того, как страница вообще становилась активной. Теперь цикл
+// просто пропускает логику скрытия, если мы не на песне, но не умирает.
 let _svLastScrollY = 0;
 let _svHeaderHidden = false;
 function _svTick() {
-  if (currentPage !== 'song-view') { _svRafId = null; return; }
-  const header = document.getElementById('song-header');
-  if (header) {
-    const y = window.scrollY || window.pageYOffset || 0;
-    const delta = y - _svLastScrollY;
-    if (y < 40) {
-      if (_svHeaderHidden) { header.classList.remove('sv-hidden'); _svHeaderHidden = false; }
-    } else if (delta > 4 && !_svHeaderHidden) {
-      header.classList.add('sv-hidden'); _svHeaderHidden = true;
-    } else if (delta < -4 && _svHeaderHidden) {
-      header.classList.remove('sv-hidden'); _svHeaderHidden = false;
+  if (currentPage === 'song-view') {
+    const header = document.getElementById('song-header');
+    if (header) {
+      const y = window.scrollY || window.pageYOffset || 0;
+      const delta = y - _svLastScrollY;
+      if (y < 40) {
+        if (_svHeaderHidden) { header.classList.remove('sv-hidden'); _svHeaderHidden = false; }
+      } else if (delta > 4 && !_svHeaderHidden) {
+        header.classList.add('sv-hidden'); _svHeaderHidden = true;
+      } else if (delta < -4 && _svHeaderHidden) {
+        header.classList.remove('sv-hidden'); _svHeaderHidden = false;
+      }
+      _svLastScrollY = y;
     }
-    _svLastScrollY = y;
   }
-  _svRafId = requestAnimationFrame(_svTick);
+  requestAnimationFrame(_svTick);
 }
+requestAnimationFrame(_svTick);
 function _svStartWatch() {
   _svLastScrollY = window.scrollY || window.pageYOffset || 0;
-  if (_svRafId == null) _svRafId = requestAnimationFrame(_svTick);
 }
 
 function navigateSetlistSong(dir, swipeAnim) {
