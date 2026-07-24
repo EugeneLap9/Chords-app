@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
-<meta http-equiv="Content-Security-Policy" content="default-src 'self' https://telegram.org https://firestore.googleapis.com https://fonts.googleapis.com https://fonts.gstatic.com; script-src 'self' 'unsafe-inline' https://telegram.org; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; connect-src https://firestore.googleapis.com https://generativelanguage.googleapis.com; media-src 'self'; img-src 'self' data:; worker-src 'none'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self' https://telegram.org https://firestore.googleapis.com https://fonts.googleapis.com https://fonts.gstatic.com; script-src 'self' 'unsafe-inline' https://telegram.org; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; connect-src https://firestore.googleapis.com https://chordbook-improve.elapsov57.workers.dev; media-src 'self'; img-src 'self' data:; worker-src 'none'">
 <title>ChordBook</title>
 <script>
 (function() {
@@ -2669,14 +2669,14 @@ function getManualChordsLayout(song, bi) {
 // ═══════════════════════════════════════════
 //  GEMINI AI — улучшение группировки квадратов в режиме "Аккорды"
 //  Одноразовый вызов по кнопке из меню песни (не при каждом рендере).
-//  Результат сохраняется в song.chordsOnlyLayout — тот же слой, что и
-//  ручное редактирование, поэтому дальше используется штатный
-//  getManualChordsLayout()/manualLayoutToHtml() без каких-либо изменений
-//  в рендере.
+//  Сам вызов Gemini и API-ключ живут на бэкенде (Cloudflare Worker,
+//  IMPROVE_CHORDS_URL) — общий ключ для всех пользователей приложения,
+//  клиент ключа не хранит и не видит. Результат сохраняется в
+//  song.chordsOnlyLayout — тот же слой, что и ручное редактирование,
+//  поэтому дальше используется штатный getManualChordsLayout()/
+//  manualLayoutToHtml() без каких-либо изменений в рендере.
 // ═══════════════════════════════════════════
-const GEMINI_KEY_LS = 'cb_gemini_key';
-function getGeminiKey() { return LS.get(GEMINI_KEY_LS, '') || ''; }
-function saveGeminiKey(k) { LS.set(GEMINI_KEY_LS, (k || '').trim()); }
+const IMPROVE_CHORDS_URL = 'https:///chordbook-improve.elapsov57.workers.dev';
 
 function extractLineChords(line) {
   const chords = [];
@@ -2694,72 +2694,18 @@ function buildGeminiChordsPayload(song) {
   return payload;
 }
 
-const GEMINI_CHORDS_PROMPT = 'Ты помогаешь музыкальному приложению для аккордовых партитур правильно '
-  + 'сгруппировать аккорды в "квадраты" (визуальные строки) для режима отображения '
-  + '"только аккорды" (без слов).\n\n'
-  + 'На входе — блоки песни (куплет/припев/бридж и т.д.), в каждом блоке — '
-  + 'построчный список аккордов в ТОМ ЖЕ порядке, что в оригинальном тексте '
-  + '(каждый элемент "lines" — это один исходный текстовый ряд с аккордами).\n\n'
-  + 'Твоя задача — решить, как эти строки должны быть сгруппированы в квадраты '
-  + '(rows) при показе БЕЗ слов, по музыкальному смыслу:\n'
-  + '1. Если несколько соседних строк вместе образуют одну музыкальную фразу '
-  + '(например, две строки по 1-2 аккорда, которые вместе дают ту же длину '
-  + 'фразы — то же число аккордов на фразу — что и другие строки этого же '
-  + 'блока), их нужно ОБЪЕДИНИТЬ в один ряд (row).\n'
-  + '2. Если строка уже сама по себе целая фраза (совпадает по длине с '
-  + 'остальными фразами в блоке), она остаётся отдельным рядом.\n'
-  + '3. Никогда не меняй порядок аккордов и не выдумывай/не убирай аккорды — '
-  + 'можно только группировать существующие аккорды из "lines" в rows, сохраняя их порядок.\n'
-  + '4. Ориентируйся на паттерн: в блоке обычно есть некая "стандартная" длина '
-  + 'фразы — используй её как подсказку для объединения более коротких строк.\n\n'
-  + 'Пример:\nВход: lines = [["E"], ["D"]]\nВыход: rows = [["E","D"]] '
-  + '(две строки по 1 аккорду — это половины одной фразы)\n\n'
-  + 'Пример:\nВход: lines = [["F#m","D","A","E"], ["F#m","D","A","E"], ["F#m","D"], ["A","E"], ["F#m","D","A","E"]]\n'
-  + 'Выход: rows = [["F#m","D","A","E"], ["F#m","D","A","E"], ["F#m","D","A","E"], ["F#m","D","A","E"]] '
-  + '(3-я и 4-я строки по 2 аккорда объединились в одну фразу по образцу соседних строк)\n\n'
-  + 'Верни результат СТРОГО в виде JSON по заданной схеме — для каждого блока '
-  + 'входного массива (сохраняя его "index") дай итоговый список "rows". '
-  + 'Если для блока группировка не нужна (строки уже и есть фразы) — верни '
-  + 'rows = lines как есть, без изменений.';
-
 async function callGeminiChordsLayout(song) {
-  const apiKey = getGeminiKey();
-  if (!apiKey) throw new Error('Нет API-ключа Gemini (см. Настройки)');
   const payload = buildGeminiChordsPayload(song);
   if (!payload.length) throw new Error('В песне нет блоков с аккордами');
-
-  const body = {
-    contents: [{ parts: [{ text: GEMINI_CHORDS_PROMPT + '\n\nВходные блоки:\n' + JSON.stringify(payload) }] }],
-    generationConfig: {
-      responseMimeType: 'application/json',
-      responseSchema: {
-        type: 'OBJECT',
-        properties: {
-          blocks: {
-            type: 'ARRAY',
-            items: {
-              type: 'OBJECT',
-              properties: {
-                index: { type: 'INTEGER' },
-                rows: { type: 'ARRAY', items: { type: 'ARRAY', items: { type: 'STRING' } } }
-              },
-              required: ['index', 'rows']
-            }
-          }
-        },
-        required: ['blocks']
-      }
-    }
-  };
 
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), 25000);
   let res;
   try {
-    res = await fetch('https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=' + encodeURIComponent(apiKey), {
+    res = await fetch(IMPROVE_CHORDS_URL, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
+      body: JSON.stringify({ blocks: payload }),
       signal: ctrl.signal
     });
   } finally {
@@ -2767,16 +2713,10 @@ async function callGeminiChordsLayout(song) {
   }
   if (!res.ok) {
     const errText = await res.text().catch(() => '');
-    throw new Error('Ошибка Gemini (HTTP ' + res.status + ')' + (errText ? ': ' + errText.slice(0, 200) : ''));
+    throw new Error('Ошибка сервера (HTTP ' + res.status + ')' + (errText ? ': ' + errText.slice(0, 200) : ''));
   }
-  const data = await res.json();
-  const text = data && data.candidates && data.candidates[0] && data.candidates[0].content
-    && data.candidates[0].content.parts && data.candidates[0].content.parts[0]
-    && data.candidates[0].content.parts[0].text;
-  if (!text) throw new Error('Пустой ответ от Gemini');
-  let parsed;
-  try { parsed = JSON.parse(text); } catch (e) { throw new Error('Gemini вернул невалидный JSON'); }
-  if (!parsed || !Array.isArray(parsed.blocks)) throw new Error('Неожиданный формат ответа Gemini');
+  const parsed = await res.json();
+  if (!parsed || !Array.isArray(parsed.blocks)) throw new Error('Неожиданный формат ответа');
   return parsed.blocks;
 }
 
@@ -2789,7 +2729,7 @@ async function improveChordsWithGemini(song) {
     layout[b.index] = { rows: b.rows };
     changed++;
   });
-  if (!changed) throw new Error('Gemini не вернул ни одной группировки');
+  if (!changed) throw new Error('Не вернулось ни одной группировки');
   song.chordsOnlyLayout = layout;
   const idx = songsCache.findIndex(s => s.id === song.id);
   if (idx !== -1) songsCache[idx].chordsOnlyLayout = layout;
@@ -4287,15 +4227,6 @@ function showSongOverflowMenu(song, btnEl) {
   });
   document.getElementById('om-ai').addEventListener('click', async e => {
     e.stopPropagation();
-    if (!getGeminiKey()) {
-      close();
-      showToast('Добавьте API-ключ Gemini в Настройках');
-      updateSettingsUI();
-      openOverlay('overlay-settings');
-      const keyInput = document.getElementById('settings-gemini-key');
-      if (keyInput) setTimeout(() => keyInput.focus(), 350);
-      return;
-    }
     const item = document.getElementById('om-ai');
     item.textContent = '⏳ Улучшаем через Gemini...';
     item.style.pointerEvents = 'none';
@@ -5060,19 +4991,10 @@ function updateSettingsUI() {
     btn.style.borderColor = active ? 'rgba(183,148,255,0.6)' : '';
     btn.style.color = active ? 'var(--primary)' : '';
   });
-  const gkInput = document.getElementById('settings-gemini-key');
-  if (gkInput && document.activeElement !== gkInput) gkInput.value = getGeminiKey();
 }
 document.querySelectorAll('.settings-density-btn').forEach(btn => {
   btn.addEventListener('click', () => { densityMode = btn.dataset.density; LS.set(DENSITY_KEY, densityMode); applyDensityMode(); updateSettingsUI(); });
 });
-(function(){
-  const gkInput = document.getElementById('settings-gemini-key');
-  if (gkInput) {
-    gkInput.addEventListener('change', () => saveGeminiKey(gkInput.value));
-    gkInput.addEventListener('blur', () => saveGeminiKey(gkInput.value));
-  }
-})();
 
 document.getElementById('settings-nav-btn').addEventListener('click', () => { updateSettingsUI(); openOverlay('overlay-settings'); });
 
@@ -5276,11 +5198,6 @@ document.getElementById('delete-sl-btn').addEventListener('click', async () => {
     <div style="display:flex;gap:10px;margin-bottom:18px">
       <button class="settings-density-btn ctrl-btn" data-density="normal" style="flex:1;height:40px;justify-content:center;font-size:13px" aria-label="Обычная плотность">Обычная</button>
       <button class="settings-density-btn ctrl-btn" data-density="compact" style="flex:1;height:40px;justify-content:center;font-size:13px" aria-label="Компактная плотность">Компактная</button>
-    </div>
-    <div class="section-header">🤖 Gemini AI</div>
-    <div style="margin-bottom:18px">
-      <input type="password" id="settings-gemini-key" placeholder="Вставьте API-ключ Gemini" style="width:100%;box-sizing:border-box;padding:10px 12px;border-radius:10px;border:1px solid var(--glass-border);background:var(--bg2);color:var(--text);font-size:13px;font-family:Manrope,sans-serif;margin-bottom:6px" aria-label="API-ключ Gemini">
-      <div style="font-size:11px;color:var(--muted)">Нужен для кнопки «✨ Улучшить аккорды (AI)» в меню песни — она поправляет группировку квадратов в режиме «Аккорды». Ключ хранится только в этом браузере. Бесплатный ключ: <a href="https://aistudio.google.com/apikey" target="_blank" style="color:var(--accent2)">aistudio.google.com/apikey</a></div>
     </div>
     <div class="section-header">Безопасность</div>
     <div class="hint-box" style="margin-bottom:8px;font-size:11px">
