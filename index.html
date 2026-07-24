@@ -4,17 +4,15 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
-<meta http-equiv="Content-Security-Policy" content="default-src 'self' https://telegram.org https://firestore.googleapis.com https://fonts.googleapis.com https://fonts.gstatic.com; script-src 'self' 'unsafe-inline' https://telegram.org; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; connect-src https://firestore.googleapis.com https://identitytoolkit.googleapis.com https://securetoken.googleapis.com; media-src 'self'; img-src 'self' data:; worker-src 'self'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self' https://telegram.org https://firestore.googleapis.com https://fonts.googleapis.com https://fonts.gstatic.com; script-src 'self' 'unsafe-inline' https://telegram.org; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; connect-src https://firestore.googleapis.com https://generativelanguage.googleapis.com; media-src 'self'; img-src 'self' data:; worker-src 'none'">
 <title>ChordBook</title>
 <script>
-// Service worker: network-first (свежая версия при онлайне, кэш — офлайн).
-// Раньше SW принудительно удалялся и приложение вообще не открывалось без
-// интернета, хотя все данные лежали в IndexedDB.
 (function() {
-  if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === 'localhost')) {
-    window.addEventListener('load', () => {
-      navigator.serviceWorker.register('./sw.js').catch(() => {});
-    });
+  if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.getRegistrations().then(r => r.forEach(x => x.unregister()));
+  }
+  if ('caches' in window) {
+    caches.keys().then(keys => keys.forEach(k => caches.delete(k)));
   }
 })();
 </script>
@@ -497,6 +495,11 @@
     border-radius:4px; padding:1px 5px;
   }
   .chords-only-row { display:flex; flex-wrap:wrap; gap:4px; }
+  .passage-badge {
+    font-family:'SF Mono','Fira Code','Courier New',monospace;
+    font-size:calc(var(--song-font,15px) * 0.85); font-weight:700;
+    color:var(--muted); margin-left:4px; opacity:0.8;
+  }
   .repeat-inline {
     display:inline-flex; align-items:center; font-size:11px; font-weight:800;
     color:var(--primary); background:rgba(183,148,255,0.12);
@@ -1211,6 +1214,36 @@
   .chord-popup-ok { flex:1; background:var(--primary); color:#fff; border:none; border-radius:8px; font-family:'Manrope',sans-serif; font-size:13px; font-weight:800; padding:9px; cursor:pointer; }
   .chord-popup-delete { flex:1; background:rgba(255,121,198,0.12); border:1px solid rgba(255,121,198,0.35); border-radius:8px; color:var(--red); font-size:13px; font-weight:800; font-family:'Manrope',sans-serif; padding:9px; cursor:pointer; }
 
+  /* REPEAT POPUP (legacy, keep markup but unused for blocks) */
+  .repeat-popup {
+    position:fixed; z-index:9999; background:var(--bg2);
+    border:1px solid var(--glass-border); border-radius:14px;
+    padding:14px 14px 12px; box-shadow:0 8px 32px rgba(0,0,0,0.5);
+    display:none; flex-direction:column; gap:10px; width:180px;
+  }
+  .repeat-popup.visible { display:flex; }
+  .repeat-popup-title { font-size:10px; color:var(--muted); font-weight:700; text-align:center; letter-spacing:0.06em; text-transform:uppercase; }
+  .repeat-popup-row { display:flex; align-items:center; justify-content:center; gap:10px; }
+  .rep-step-btn {
+    width:36px; height:36px; border-radius:9px;
+    background:rgba(183,148,255,0.1); border:1px solid rgba(183,148,255,0.25);
+    color:var(--primary); font-size:22px; font-weight:700;
+    display:flex; align-items:center; justify-content:center;
+    cursor:pointer; user-select:none;
+  }
+  .rep-step-btn:active { background:rgba(183,148,255,0.22); }
+  .rep-num-input {
+    background:rgba(183,148,255,0.08); border:1px solid rgba(183,148,255,0.3);
+    border-radius:8px; color:var(--text); font-size:20px; font-weight:800;
+    font-family:'Manrope',sans-serif; padding:5px 8px; outline:none;
+    width:60px; text-align:center;
+  }
+  .rep-ok-btn {
+    width:100%; padding:8px; border-radius:9px;
+    background:var(--primary); border:none; color:#fff;
+    font-size:13px; font-weight:800; font-family:'Manrope',sans-serif; cursor:pointer;
+  }
+
   /* ── CHORDS-ONLY EDITOR (изолированный редактор для режима "Аккорды") ── */
   .co-editor-block {
     background:var(--glass-bg); backdrop-filter:blur(12px); -webkit-backdrop-filter:blur(12px);
@@ -1248,6 +1281,13 @@
     display:flex; align-items:center; justify-content:center;
   }
   .co-editor-add-chord-btn:active { background:rgba(183,148,255,0.12); }
+  .co-editor-newline-btn {
+    display:flex; align-items:center; gap:4px; padding:4px 10px; margin-bottom:6px;
+    border-radius:8px; background:transparent; border:1.5px dashed rgba(183,148,255,0.3);
+    color:var(--muted); font-size:11px; font-weight:700; cursor:pointer; font-family:'Manrope',sans-serif;
+    flex-shrink:0;
+  }
+  .co-editor-newline-btn:active { background:rgba(183,148,255,0.1); }
   .co-editor-add-row-btn {
     display:flex; align-items:center; justify-content:center; gap:6px;
     width:100%; margin-top:2px; padding:8px; border-radius:10px;
@@ -1263,225 +1303,6 @@
     margin-left:auto; flex-shrink:0;
   }
   .co-editor-reset-btn:active { background:rgba(255,121,198,0.12); }
-
-  /* ═══════════════════════════════════════════════════════════
-     LIQUID GLASS — единый слой дизайна (переопределяет базу выше).
-     Принципы:
-     • Тяжёлый backdrop-filter остаётся ТОЛЬКО на «хроме» приложения
-       (шапки, нижняя навигация, шторки, меню, тосты). На карточках и
-       мелких контролах он заменён градиентным «стеклом» с верхним
-       бликом — визуально то же, но в разы легче для Telegram WebView.
-     • Каждая стеклянная поверхность получает specular-блик (inset).
-     • Нижняя навигация — плавающая стеклянная «таблетка».
-     • Темы (white/bw/сцена/print) работают поверх как цветовые
-       варианты: их собственные фоны не переопределяются.
-     ═══════════════════════════════════════════════════════════ */
-  :root {
-    --radius: 18px;
-    --glass-hi: inset 0 1px 0 rgba(255,255,255,0.10);
-    --glass-hi-strong: inset 0 1px 0 rgba(255,255,255,0.16);
-    --glass-grad: linear-gradient(160deg, rgba(255,255,255,0.085), rgba(255,255,255,0.028) 55%, rgba(255,255,255,0.05));
-  }
-
-  /* «Жидкий» фон приложения — мягкие цветовые пятна */
-  body::before {
-    background:
-      radial-gradient(ellipse 70% 55% at 18% 8%, rgba(183,148,255,0.16) 0%, transparent 62%),
-      radial-gradient(ellipse 55% 45% at 85% 82%, rgba(77,97,255,0.13) 0%, transparent 62%),
-      radial-gradient(ellipse 45% 35% at 62% 38%, rgba(255,121,198,0.08) 0%, transparent 55%);
-  }
-
-  /* ── ХРОМ: усиленное стекло ── */
-  .header {
-    background: rgba(13,13,18,0.55);
-    backdrop-filter: blur(28px) saturate(170%);
-    -webkit-backdrop-filter: blur(28px) saturate(170%);
-    box-shadow: 0 1px 0 rgba(255,255,255,0.04);
-  }
-  .song-view-header {
-    background: rgba(13,13,18,0.5);
-    backdrop-filter: blur(24px) saturate(160%);
-    -webkit-backdrop-filter: blur(24px) saturate(160%);
-  }
-
-  /* Нижняя навигация — плавающая таблетка */
-  .bottom-nav {
-    left: 12px; right: 12px;
-    bottom: calc(10px + env(safe-area-inset-bottom, 0px));
-    height: var(--bottom-bar);
-    padding-bottom: 0;
-    border-radius: 24px;
-    border: 1px solid var(--glass-border);
-    background: rgba(13,13,18,0.62);
-    backdrop-filter: blur(28px) saturate(180%);
-    -webkit-backdrop-filter: blur(28px) saturate(180%);
-    box-shadow: var(--glass-hi), 0 12px 32px rgba(0,0,0,0.45);
-    overflow: hidden;
-  }
-  body { padding-bottom: calc(var(--bottom-bar) + 54px + env(safe-area-inset-bottom, 0px)); }
-  .nav-btn { border-radius: 18px; margin: 6px 4px; transition: color .2s, background .2s; }
-  .nav-btn.active { background: var(--glass-bg-hover); box-shadow: var(--glass-hi); }
-  .fab { bottom: calc(var(--bottom-bar) + 26px + env(safe-area-inset-bottom, 0px)); }
-  .toast { bottom: calc(var(--bottom-bar) + 30px + env(safe-area-inset-bottom, 0px)); }
-
-  /* ── КАРТОЧКИ: стекло без backdrop-filter (перф) ── */
-  .song-card, .setlist-card, .setlist-song-item, .picker-song-item,
-  .sync-song-row, .json-song-row, .storage-info {
-    backdrop-filter: none; -webkit-backdrop-filter: none;
-    background: var(--glass-grad);
-    box-shadow: var(--glass-hi), 0 2px 10px rgba(0,0,0,0.16);
-  }
-  .song-card-block, .chords-only-block, .co-editor-block {
-    backdrop-filter: none; -webkit-backdrop-filter: none;
-  }
-
-  /* ── КОНТРОЛЫ: лёгкое стекло + блик ── */
-  .icon-btn, .ctrl-btn, .transpose-block, #song-view-mode-btn,
-  .search-input, .form-input, .form-textarea, .form-select,
-  .chip, .sort-chip, .setlist-nav-bar, .import-tabs, .sl-quick-search input {
-    backdrop-filter: none; -webkit-backdrop-filter: none;
-  }
-  .icon-btn, .ctrl-btn, .transpose-block, #song-view-mode-btn, .setlist-nav-bar {
-    box-shadow: var(--glass-hi);
-  }
-  .search-input, .sl-quick-search input { border-radius: 16px; box-shadow: var(--glass-hi); }
-
-  /* ── ГЛЯНЦЕВЫЕ КНОПКИ ── */
-  .btn-primary, .onboarding-next {
-    border-radius: 16px;
-    box-shadow: inset 0 1px 0 rgba(255,255,255,0.35), 0 6px 24px rgba(123,92,245,0.4);
-  }
-  .fab {
-    border-radius: 20px;
-    box-shadow: inset 0 1px 0 rgba(255,255,255,0.4), 0 6px 24px rgba(183,148,255,0.45), 0 0 40px rgba(77,97,255,0.2);
-  }
-
-  /* ── ШТОРКИ / МЕНЮ / ДИАЛОГИ ── */
-  .drawer {
-    border-radius: 28px 28px 0 0;
-    box-shadow: var(--glass-hi-strong), 0 -12px 48px rgba(0,0,0,0.5);
-  }
-  .drawer-handle { width: 44px; }
-  .overflow-menu, .confirm-dialog {
-    box-shadow: var(--glass-hi), 0 12px 48px rgba(0,0,0,0.55);
-  }
-  .toast { box-shadow: var(--glass-hi), 0 8px 32px rgba(0,0,0,0.4); border-radius: 16px; }
-
-  /* ── АККОРДЫ: читаемость прежде всего, блик — едва заметный ── */
-  .chord-badge { box-shadow: inset 0 1px 0 rgba(255,255,255,0.08); }
-  body.theme-print .chord-badge { box-shadow: none; }
-
-  /* ── FALLBACK: WebView без backdrop-filter → сплошные фоны,
-       чтобы текст не оказывался на прозрачной шапке ── */
-  @supports not ((backdrop-filter: blur(4px)) or (-webkit-backdrop-filter: blur(4px))) {
-    .header, .song-view-header, .bottom-nav, .drawer,
-    .overflow-menu, .onboarding-sheet, .toast { background: var(--bg) !important; }
-  }
-
-  /* ── ПАНЕЛЬ ПЕСНИ: органичное скрытие при скролле ── */
-  .song-view-header {
-    transition: transform .38s cubic-bezier(.33,1,.36,1), opacity .3s ease;
-    will-change: transform, opacity;
-  }
-  .song-view-header.sv-hidden {
-    transform: translateY(-112%);
-    opacity: 0;
-    pointer-events: none; /* спрятанная панель не перехватывает тапы */
-  }
-
-  /* ── РЕДАКТОР: современные попапы ── */
-  .chord-edit-popup {
-    border-radius: 20px;
-    background: rgba(22,18,32,0.92);
-    backdrop-filter: blur(28px) saturate(160%);
-    -webkit-backdrop-filter: blur(28px) saturate(160%);
-    box-shadow: var(--glass-hi-strong), 0 16px 48px rgba(0,0,0,0.55);
-    padding: 12px;
-    max-width: 296px;
-  }
-  .chord-edit-popup.visible { animation: cpPop .18s cubic-bezier(.34,1.4,.5,1); }
-  @keyframes cpPop { from { transform: scale(.92); opacity: 0; } to { transform: scale(1); opacity: 1; } }
-  body.theme-white .chord-edit-popup { background: rgba(250,248,255,0.96); }
-  body.theme-bw .chord-edit-popup { background: rgba(12,12,12,0.97); }
-  body.theme-glass .chord-edit-popup { background: rgba(26,17,12,0.95); }
-  body.theme-print .chord-edit-popup { background: rgba(255,255,255,0.98); }
-
-  /* Чипы выбора аккорда */
-  .cp-section-label {
-    font-size: 9px; font-weight: 800; color: var(--muted);
-    text-transform: uppercase; letter-spacing: 0.12em; margin-top: 2px;
-  }
-  .cp-section { display: flex; flex-wrap: wrap; gap: 4px; width: 268px; }
-  .cp-chip {
-    min-width: 38px; height: 34px; padding: 0 8px; border-radius: 10px;
-    background: var(--glass-bg); border: 1px solid var(--glass-border);
-    color: var(--text); font-family: 'SF Mono','Fira Code',monospace;
-    font-size: 13px; font-weight: 700; cursor: pointer;
-    box-shadow: var(--glass-hi);
-    transition: background .12s, border-color .12s, transform .1s;
-  }
-  .cp-chip:active { transform: scale(0.92); }
-  .cp-chip.active {
-    background: var(--primary); border-color: var(--primary); color: #fff;
-    box-shadow: inset 0 1px 0 rgba(255,255,255,0.3), 0 2px 10px rgba(183,148,255,0.35);
-  }
-  body.theme-glass .cp-chip.active { color: #1a0f08; }
-  body.theme-bw .cp-chip.active { color: #000; }
-
-  /* Кнопка удаления строки в редакторе «Аккорды» */
-  .co-editor-del-row-btn {
-    width: 28px; height: 28px; border-radius: 8px; flex-shrink: 0; margin-left: auto;
-    background: transparent; border: 1px solid transparent;
-    color: var(--muted); font-size: 12px; cursor: pointer;
-    display: flex; align-items: center; justify-content: center;
-    transition: color .12s, background .12s;
-  }
-  .co-editor-del-row-btn:active { color: var(--red); background: rgba(255,121,198,0.12); }
-
-  /* Баннер режима редактирования — стеклянный */
-  .inline-edit-banner {
-    background: linear-gradient(160deg, rgba(183,148,255,0.16), rgba(183,148,255,0.07));
-    backdrop-filter: blur(16px) saturate(150%);
-    -webkit-backdrop-filter: blur(16px) saturate(150%);
-    border-bottom: 1px solid rgba(183,148,255,0.25);
-    box-shadow: var(--glass-hi);
-  }
-  .inline-edit-save-btn {
-    border-radius: 12px;
-    box-shadow: inset 0 1px 0 rgba(255,255,255,0.3), 0 2px 10px rgba(183,148,255,0.35);
-  }
-  .inline-edit-cancel-btn { border-radius: 12px; }
-
-  /* Диалоги: инпут внутри + акцентная кнопка ОК */
-  .confirm-dialog .form-input { margin-top: 4px; }
-  .input-dialog-ok {
-    background: var(--primary) !important; border-color: var(--primary) !important;
-    color: #fff !important;
-    box-shadow: inset 0 1px 0 rgba(255,255,255,0.3), 0 2px 10px rgba(183,148,255,0.35);
-  }
-  body.theme-glass .input-dialog-ok { color: #1a0f08 !important; }
-  body.theme-bw .input-dialog-ok { color: #000 !important; }
-
-  /* Микроанимации нажатий */
-  .icon-btn:active, .ctrl-btn:active, .transpose-btn:active,
-  .co-editor-add-chord-btn:active, .co-editor-add-row-btn:active,
-  .ie-add-block-btn:active { transform: scale(0.94); }
-  .icon-btn, .ctrl-btn, .transpose-btn,
-  .co-editor-add-chord-btn, .co-editor-add-row-btn, .ie-add-block-btn { transition: background .15s, border-color .15s, transform .1s; }
-  .overflow-menu { animation: cpPop .16s cubic-bezier(.34,1.4,.5,1); }
-
-  /* Доступность: видимый фокус только с клавиатуры */
-  button:focus-visible, .cp-chip:focus-visible {
-    outline: 2px solid rgba(183,148,255,0.65); outline-offset: 2px;
-  }
-
-  /* ── Уважение к reduce-motion ── */
-  @media (prefers-reduced-motion: reduce) {
-    *, *::before, *::after {
-      animation-duration: 0.01ms !important;
-      transition-duration: 0.01ms !important;
-    }
-  }
 </style>
 </head>
 <body>
@@ -1558,10 +1379,6 @@
 <div class="chord-edit-popup" id="ie-chord-popup">
   <input id="ie-cp-input" type="text" autocomplete="off" autocorrect="off" spellcheck="false" maxlength="10" placeholder="Am">
   <div id="ie-cp-mirror-hint" style="display:none;font-size:10px;color:var(--muted);text-align:center;margin-top:-2px">Изменится во всех повторах</div>
-  <div class="cp-section-label">Нота</div>
-  <div class="cp-section" id="ie-cp-roots"></div>
-  <div class="cp-section-label">Тип</div>
-  <div class="cp-section" id="ie-cp-quals"></div>
   <div class="chord-popup-row1">
     <button class="chord-popup-delete" id="ie-cp-del" title="Удалить">🗑 Удалить</button>
     <button class="chord-popup-ok" id="ie-cp-ok">OK</button>
@@ -1864,14 +1681,6 @@ const LS = {
   set(key, val) { try { localStorage.setItem(key, JSON.stringify(val)); return true; } catch(e) { return false; } }
 };
 
-// Русские склонения: plural(3,'песня','песни','песен') → 'песни'
-function plural(n, one, few, many) {
-  const m10 = n % 10, m100 = n % 100;
-  if (m10 === 1 && m100 !== 11) return one;
-  if (m10 >= 2 && m10 <= 4 && (m100 < 10 || m100 >= 20)) return few;
-  return many;
-}
-
 function showConfirm({ title, msg, okLabel = 'Удалить', onOk }) {
   const el = document.createElement('div');
   el.className = 'confirm-dialog-overlay';
@@ -1884,41 +1693,13 @@ function showConfirm({ title, msg, okLabel = 'Удалить', onOk }) {
     </div>
   </div>`;
   document.body.appendChild(el);
-  // Escape-листенер снимается при ЛЮБОМ способе закрытия (раньше — только
-  // по самому Escape, из-за чего листенеры копились на document)
-  const onEsc = e => { if (e.key === 'Escape') close(); };
-  const close = () => { el.remove(); document.removeEventListener('keydown', onEsc); };
+  const close = () => el.remove();
   el.querySelector('#cdCancel').onclick = close;
   el.querySelector('#cdOk').onclick = () => { close(); onOk(); };
   el.addEventListener('click', e => { if (e.target === el) close(); });
-  document.addEventListener('keydown', onEsc);
-}
-
-// Стеклянный диалог ввода — замена системному prompt() (который выглядит
-// чужеродно и в некоторых WebView вообще заблокирован)
-function showInputDialog({ title, value = '', placeholder = '', okLabel = 'Готово', onOk }) {
-  const el = document.createElement('div');
-  el.className = 'confirm-dialog-overlay';
-  el.innerHTML = `<div class="confirm-dialog">
-    <div class="confirm-dialog-title">${escapeHtml(title)}</div>
-    <input class="form-input" id="idInput" placeholder="${escapeHtml(placeholder)}" autocomplete="off">
-    <div class="confirm-dialog-btns" style="margin-top:16px">
-      <button class="confirm-dialog-cancel" id="idCancel">Отмена</button>
-      <button class="confirm-dialog-ok input-dialog-ok" id="idOk">${escapeHtml(okLabel)}</button>
-    </div>
-  </div>`;
-  document.body.appendChild(el);
-  const inp = el.querySelector('#idInput');
-  inp.value = value;
-  const onEsc = e => { if (e.key === 'Escape') close(); };
-  const close = () => { el.remove(); document.removeEventListener('keydown', onEsc); };
-  const ok = () => { const v = inp.value; close(); onOk(v); };
-  el.querySelector('#idCancel').onclick = close;
-  el.querySelector('#idOk').onclick = ok;
-  el.addEventListener('click', e => { if (e.target === el) close(); });
-  inp.addEventListener('keydown', e => { if (e.key === 'Enter') ok(); });
-  document.addEventListener('keydown', onEsc);
-  setTimeout(() => { inp.focus(); inp.select(); }, 60);
+  document.addEventListener('keydown', function esc(e) {
+    if (e.key === 'Escape') { close(); document.removeEventListener('keydown', esc); }
+  });
 }
 
 const _undoStack = [];
@@ -2052,62 +1833,6 @@ const FB_PROJECT = 'chordbook-83a89';
 const FB_API_KEY = 'AIzaSyDHlkd5j_8YhAAxXWIhVuiaIyd9lKuL35I';
 const FB_BASE = `https://firestore.googleapis.com/v1/projects/${FB_PROJECT}/databases/(default)/documents/shared`;
 
-// ═══════════════════════════════════════════
-//  FIREBASE AUTH (анонимная)
-//  Позволяет закрыть Security Rules до `allow read, write: if request.auth != null`
-//  вместо полностью открытой базы. Пока анонимный вход в консоли Firebase
-//  не включён (или правила ещё открыты) — работает как раньше, без токена.
-//  Порядок перехода: 1) включить Anonymous в Firebase Console → Authentication;
-//  2) перевести бота на service account; 3) закрыть правила.
-// ═══════════════════════════════════════════
-let _fbToken = null, _fbTokenExp = 0;
-let _fbRefreshToken = LS.get('cb_fb_refresh', null);
-let _fbAuthUnavailable = false; // анонимный вход выключен в проекте — не долбим API
-
-async function fbEnsureAuth() {
-  if (_fbAuthUnavailable) return null;
-  if (_fbToken && Date.now() < _fbTokenExp - 60000) return _fbToken;
-  try {
-    if (_fbRefreshToken) {
-      const r = await fetch('https://securetoken.googleapis.com/v1/token?key=' + FB_API_KEY, {
-        method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-        body: 'grant_type=refresh_token&refresh_token=' + encodeURIComponent(_fbRefreshToken)
-      });
-      if (r.ok) {
-        const d = await r.json();
-        _fbToken = d.id_token || d.access_token;
-        _fbTokenExp = Date.now() + (Number(d.expires_in) || 3600) * 1000;
-        _fbRefreshToken = d.refresh_token || _fbRefreshToken;
-        LS.set('cb_fb_refresh', _fbRefreshToken);
-        return _fbToken;
-      }
-      _fbRefreshToken = null; LS.set('cb_fb_refresh', null); // протух — заново
-    }
-    const r2 = await fetch('https://identitytoolkit.googleapis.com/v1/accounts:signUp?key=' + FB_API_KEY, {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ returnSecureToken: true })
-    });
-    if (r2.ok) {
-      const d = await r2.json();
-      _fbToken = d.idToken;
-      _fbTokenExp = Date.now() + (Number(d.expiresIn) || 3600) * 1000;
-      _fbRefreshToken = d.refreshToken;
-      LS.set('cb_fb_refresh', _fbRefreshToken);
-      return _fbToken;
-    }
-    if (r2.status === 400) _fbAuthUnavailable = true; // ADMIN_ONLY_OPERATION и т.п.
-  } catch (e) {}
-  return null;
-}
-
-// Единая точка всех запросов к Firestore: добавляет Bearer-токен, если есть
-async function fsFetch(url, opts = {}) {
-  const token = await fbEnsureAuth();
-  const headers = { ...(opts.headers || {}) };
-  if (token) headers['Authorization'] = 'Bearer ' + token;
-  return fetch(url, { ...opts, headers });
-}
-
 function toFsValue(val) {
   if (val === null || val === undefined) return { nullValue: null };
   if (typeof val === 'boolean') return { booleanValue: val };
@@ -2129,21 +1854,12 @@ function fromFsValue(v) {
   return null;
 }
 function fsDocToObj(doc) { if (!doc || !doc.fields) return null; const obj = {}; for (const k of Object.keys(doc.fields)) obj[k] = fromFsValue(doc.fields[k]); return obj; }
-async function fsGet(docId) { const r = await fsFetch(`${FB_BASE}/${docId}?key=${FB_API_KEY}`); if (!r.ok) return null; return fsDocToObj(await r.json()); }
+async function fsGet(docId) { const r = await fetch(`${FB_BASE}/${docId}?key=${FB_API_KEY}`); if (!r.ok) return null; return fsDocToObj(await r.json()); }
 async function fsSet(docId, data) {
   const fields = {};
   for (const k of Object.keys(data)) fields[k] = toFsValue(data[k]);
-  const r = await fsFetch(`${FB_BASE}/${docId}?key=${FB_API_KEY}`, { method:'PATCH', headers:{'Content-Type':'application/json'}, body:JSON.stringify({ fields }) });
+  const r = await fetch(`${FB_BASE}/${docId}?key=${FB_API_KEY}`, { method:'PATCH', headers:{'Content-Type':'application/json'}, body:JSON.stringify({ fields }) });
   return r.ok;
-}
-// Лёгкий GET только метаданных updatedAt (field mask) — для дешёвого polling:
-// вместо перекачивания всего списка песен каждые 20 сек — пара сотен байт.
-async function fsGetMeta(docId) {
-  try {
-    const r = await fsFetch(`${FB_BASE}/${docId}?key=${FB_API_KEY}&mask.fieldPaths=updatedAt`);
-    if (!r.ok) return null;
-    return fsDocToObj(await r.json());
-  } catch(e) { return null; }
 }
 
 // ═══════════════════════════════════════════
@@ -2176,170 +1892,56 @@ function getSongNotation(songId) { return notationMap[songId] || null; } // null
 // ═══════════════════════════════════════════
 //  FIREBASE SYNC
 // ═══════════════════════════════════════════
-// Метаданные синхронизации хранятся в localStorage, чтобы факт несинхронизи-
-// рованных офлайн-правок переживал перезапуск приложения. Раньше pending-флаг
-// жил только в памяти: правки, сделанные офлайн, при следующем запуске молча
-// затирались серверными данными в loadFromFirebase().
-const SYNC_META_KEY = 'cb_sync_meta';
-const _syncMeta = LS.get(SYNC_META_KEY, { songsSavedAt: 0, setlistsSavedAt: 0, pendingSongs: false, pendingSetlists: false });
-function saveSyncMeta() { LS.set(SYNC_META_KEY, _syncMeta); }
-
-let _lastSongSave = _syncMeta.songsSavedAt || 0;
-let _lastSetlistSave = _syncMeta.setlistsSavedAt || 0;
+let _lastSongSave = 0;
+let _lastSetlistSave = 0;
 let _syncInterval = null;
-let _pendingSongsSync = !!_syncMeta.pendingSongs;
-let _pendingSetlistsSync = !!_syncMeta.pendingSetlists;
+let _pendingSongsSync = false;
+let _pendingSetlistsSync = false;
 
-function _markSongsSave(pending) {
-  _syncMeta.songsSavedAt = _lastSongSave;
-  _syncMeta.pendingSongs = _pendingSongsSync = pending;
-  saveSyncMeta();
-}
-function _markSetlistsSave(pending) {
-  _syncMeta.setlistsSavedAt = _lastSetlistSave;
-  _syncMeta.pendingSetlists = _pendingSetlistsSync = pending;
-  saveSyncMeta();
-}
-
-// ── TOMBSTONES (записи об удалениях) ──
-// Без них merge-синхронизация «воскрешала» бы удалённые песни при слиянии
-// со списком другого устройства. Хранятся локально + в shared/deleted.
-let _tombSongs = LS.get('cb_tomb_songs', {});       // {songId: ts удаления}
-let _tombSetlists = LS.get('cb_tomb_setlists', {}); // {slId: ts удаления}
-function _saveTombs() { LS.set('cb_tomb_songs', _tombSongs); LS.set('cb_tomb_setlists', _tombSetlists); }
-function _mergeTombs(remoteDel) {
-  if (remoteDel) {
-    for (const [id, ts] of Object.entries(remoteDel.songs || {})) if (!(id in _tombSongs) || _tombSongs[id] < Number(ts)) _tombSongs[id] = Number(ts);
-    for (const [id, ts] of Object.entries(remoteDel.setlists || {})) if (!(id in _tombSetlists) || _tombSetlists[id] < Number(ts)) _tombSetlists[id] = Number(ts);
-  }
-  const cutoff = Date.now() - 90 * 24 * 3600 * 1000; // старше 90 дней не нужны
-  for (const [id, ts] of Object.entries(_tombSongs)) if (ts < cutoff) delete _tombSongs[id];
-  for (const [id, ts] of Object.entries(_tombSetlists)) if (ts < cutoff) delete _tombSetlists[id];
-  _saveTombs();
-}
-async function _pushDeletedDoc() {
-  try { await fsSet('deleted', { songs: _tombSongs, setlists: _tombSetlists, updatedAt: Date.now() }); } catch(e) {}
-}
-
-// ── MERGE: поэлементное слияние списков вместо last-write-wins ──
-// Побеждает элемент с более свежим updatedAt; tombstone «сильнее» правок,
-// сделанных до удаления. Так два устройства, сохранившие разное, не
-// затирают правки друг друга целиком.
-function mergeLists(localList, remoteList, tombs) {
-  const map = new Map();
-  for (const it of remoteList || []) if (it && it.id) map.set(it.id, it);
-  for (const it of localList || []) {
-    if (!it || !it.id) continue;
-    const r = map.get(it.id);
-    if (!r || (it.updatedAt || it.createdAt || 0) > (r.updatedAt || r.createdAt || 0)) map.set(it.id, it);
-  }
-  const out = [];
-  for (const it of map.values()) {
-    const delTs = tombs[it.id];
-    if (delTs && delTs >= (it.updatedAt || it.createdAt || 0)) continue;
-    out.push(it);
-  }
-  out.sort((a, b) => (b.updatedAt || b.createdAt || 0) - (a.updatedAt || a.createdAt || 0));
-  return out;
-}
-
-// IDB-зеркало списка: кладёт актуальные и удаляет отсутствующие
-async function _syncIdbSongs(list) {
-  try {
-    await IDB.putAllSongs(list);
-    const keep = new Set(list.map(s => s.id));
-    for (const s of await IDB.getAllSongs()) if (!keep.has(s.id)) await IDB.deleteSong(s.id);
-  } catch(e) { console.error('IDB sync error:', e); }
-}
-async function _syncIdbSetlists(list) {
-  try {
-    await IDB.putAllSetlists(list);
-    const keep = new Set(list.map(s => s.id));
-    for (const s of await IDB.getAllSetlists()) if (!keep.has(s.id)) await IDB.deleteSetlist(s.id);
-  } catch(e) {}
-}
-
-// Пуш с предварительным merge: читаем сервер, сливаем, пишем объединённое
 async function saveSongs(songs) {
-  songsCache = songs;
   _lastSongSave = Date.now();
-  await _syncIdbSongs(songsCache);
-  if (!navigator.onLine) { _markSongsSave(true); return; }
-  try {
-    const [remote, remoteDel] = await Promise.all([fsGet('songs'), fsGet('deleted')]);
-    _mergeTombs(remoteDel);
-    const merged = mergeLists(songsCache, remote && remote.list, _tombSongs);
-    songsCache = merged;
-    await _syncIdbSongs(merged);
-    const ok = await fsSet('songs', { list: merged, updatedAt: _lastSongSave });
-    _markSongsSave(!ok);
-  } catch(e) { _markSongsSave(true); }
+  try { await IDB.putAllSongs(songs); } catch(e) { console.error('IDB save error:', e); }
+  if (!navigator.onLine) { _pendingSongsSync = true; return; }
+  try { await fsSet('songs', { list: songs, updatedAt: _lastSongSave }); _pendingSongsSync = false; }
+  catch(e) { _pendingSongsSync = true; }
 }
 
 async function saveSingleSong(song) {
+  _lastSongSave = Date.now();
   try { await IDB.putSong(song); } catch(e) { console.error('IDB putSong error:', e); }
-  await saveSongs(songsCache);
+  if (!navigator.onLine) { _pendingSongsSync = true; return; }
+  try { await fsSet('songs', { list: songsCache, updatedAt: _lastSongSave }); _pendingSongsSync = false; }
+  catch(e) { _pendingSongsSync = true; }
 }
 
 async function saveSetlists() {
   _lastSetlistSave = Date.now();
-  await _syncIdbSetlists(setlistsCache);
-  if (!navigator.onLine) { _markSetlistsSave(true); return; }
-  try {
-    const [remote, remoteDel] = await Promise.all([fsGet('setlists'), fsGet('deleted')]);
-    _mergeTombs(remoteDel);
-    const merged = mergeLists(setlistsCache, remote && remote.list, _tombSetlists);
-    setlistsCache = merged;
-    await _syncIdbSetlists(merged);
-    const ok = await fsSet('setlists', { list: merged, updatedAt: _lastSetlistSave });
-    _markSetlistsSave(!ok);
-  } catch(e) { _markSetlistsSave(true); }
+  try { await IDB.putAllSetlists(setlistsCache); } catch(e) { console.error('IDB setlists save error:', e); }
+  if (!navigator.onLine) { _pendingSetlistsSync = true; return; }
+  try { await fsSet('setlists', { list: setlistsCache, updatedAt: _lastSetlistSave }); _pendingSetlistsSync = false; }
+  catch(e) { _pendingSetlistsSync = true; }
 }
-
-// ── POLLING: лёгкий (field mask) ──
-// Каждые 20 сек читаем только updatedAt (пара сотен байт), полный список
-// качаем и сливаем лишь когда сервер реально изменился.
-const _remoteTs = { songs: 0, setlists: 0, deleted: 0, singers: 0 };
 
 function startFirebaseSync() {
   if (_syncInterval) clearInterval(_syncInterval);
   _syncInterval = setInterval(async () => {
     if (!navigator.onLine || isEditingDrawerOpen) return;
-    if (typeof _inlineEditActive !== 'undefined' && _inlineEditActive) return;
     if (Date.now() - _lastSongSave < 10000) return;
     try {
-      const [mSongs, mSetlists, mDeleted, mSingers] = await Promise.all([
-        fsGetMeta('songs'), fsGetMeta('setlists'), fsGetMeta('deleted'), fsGetMeta('singers')
-      ]);
-      if (mDeleted && (mDeleted.updatedAt || 0) > _remoteTs.deleted) {
-        _remoteTs.deleted = mDeleted.updatedAt || 0;
-        _mergeTombs(await fsGet('deleted'));
+      const [songsData, setlistsData] = await Promise.all([fsGet('songs'), fsGet('setlists')]);
+      if (songsData && songsData.list && songsData.updatedAt > _lastSongSave) {
+        songsCache = songsData.list;
+        await IDB.putAllSongs(songsCache);
+        if (currentPage === 'songs') renderSongs(document.getElementById('search-input').value);
       }
-      if (mSongs && (mSongs.updatedAt || 0) > _remoteTs.songs) {
-        _remoteTs.songs = mSongs.updatedAt || 0;
-        const data = await fsGet('songs');
-        if (data && data.list) {
-          songsCache = mergeLists(songsCache, data.list, _tombSongs);
-          await _syncIdbSongs(songsCache);
-          if (currentPage === 'songs') renderSongs(document.getElementById('search-input').value);
+      if (setlistsData && setlistsData.list && setlistsData.updatedAt > _lastSetlistSave) {
+        setlistsCache = setlistsData.list;
+        await IDB.putAllSetlists(setlistsCache);
+        if (currentPage === 'setlists') renderSetlists();
+        if (currentPage === 'setlist-view' && currentSetlistId) {
+          const fresh = setlistsCache.find(s => s.id === currentSetlistId);
+          if (fresh) renderSetlistView(fresh);
         }
-      }
-      if (mSetlists && (mSetlists.updatedAt || 0) > _remoteTs.setlists) {
-        _remoteTs.setlists = mSetlists.updatedAt || 0;
-        const data = await fsGet('setlists');
-        if (data && data.list) {
-          setlistsCache = mergeLists(setlistsCache, data.list, _tombSetlists);
-          await _syncIdbSetlists(setlistsCache);
-          if (currentPage === 'setlists') renderSetlists();
-          if (currentPage === 'setlist-view' && currentSetlistId) {
-            const fresh = setlistsCache.find(s => s.id === currentSetlistId);
-            if (fresh) renderSetlistView(fresh);
-          }
-        }
-      }
-      if (mSingers && (mSingers.updatedAt || 0) > _remoteTs.singers) {
-        _remoteTs.singers = mSingers.updatedAt || 0;
-        await pullSingers();
       }
     } catch(e) {}
   }, 20000);
@@ -2364,31 +1966,9 @@ async function loadFromFirebase() {
 
   showSyncStatus('🔄 Синхронизация...');
   try {
-    const [songsData, setlistsData, deletedData] = await Promise.all([fsGet('songs'), fsGet('setlists'), fsGet('deleted')]);
-    _mergeTombs(deletedData);
-    if (deletedData) _remoteTs.deleted = deletedData.updatedAt || 0;
-    // Merge вместо замены: локальные правки (в т.ч. офлайн) не затираются
-    if (songsData && songsData.list) {
-      _remoteTs.songs = songsData.updatedAt || 0;
-      songsCache = mergeLists(songsCache, songsData.list, _tombSongs);
-      await _syncIdbSongs(songsCache);
-      if (_pendingSongsSync) {
-        _lastSongSave = Date.now();
-        const ok = await fsSet('songs', { list: songsCache, updatedAt: _lastSongSave });
-        _markSongsSave(!ok);
-      }
-    }
-    if (setlistsData && setlistsData.list) {
-      _remoteTs.setlists = setlistsData.updatedAt || 0;
-      setlistsCache = mergeLists(setlistsCache, setlistsData.list, _tombSetlists);
-      await _syncIdbSetlists(setlistsCache);
-      if (_pendingSetlistsSync) {
-        _lastSetlistSave = Date.now();
-        const ok = await fsSet('setlists', { list: setlistsCache, updatedAt: _lastSetlistSave });
-        _markSetlistsSave(!ok);
-      }
-    }
-    pullSingers(); // общие профили солистов (не блокируем загрузку)
+    const [songsData, setlistsData] = await Promise.all([fsGet('songs'), fsGet('setlists')]);
+    if (songsData && songsData.list) { songsCache = songsData.list; await IDB.putAllSongs(songsCache); }
+    if (setlistsData && setlistsData.list) { setlistsCache = setlistsData.list; await IDB.putAllSetlists(setlistsCache); }
     showSyncStatus('✅ Синхронизировано');
     renderSongs();
   } catch(e) { showSyncStatus('⚠️ Оффлайн'); }
@@ -2399,8 +1979,8 @@ async function loadFromFirebase() {
 window.addEventListener('online', async () => {
   showSyncStatus('🔄 Синхронизация...');
   try {
-    if (_pendingSongsSync) await saveSongs(songsCache);       // merge-пуш
-    if (_pendingSetlistsSync) await saveSetlists();           // merge-пуш
+    if (_pendingSongsSync) { await fsSet('songs', { list: songsCache, updatedAt: Date.now() }); _pendingSongsSync = false; }
+    if (_pendingSetlistsSync) { await fsSet('setlists', { list: setlistsCache, updatedAt: Date.now() }); _pendingSetlistsSync = false; }
     showSyncStatus('✅ Синхронизировано');
   } catch(e) { showSyncStatus('⚠️ Ошибка sync'); }
   setTimeout(hideSyncStatus, 2000);
@@ -2553,59 +2133,7 @@ const DEFAULT_SINGER_PROFILES = {
   "Саша Ли": { keysSung: ["E"], min: 4, max: 4 }
 };
 let singerProfiles = LS.get('cb_singers', null) || JSON.parse(JSON.stringify(DEFAULT_SINGER_PROFILES));
-
-// ── ОБЩИЕ ПРОФИЛИ СОЛИСТОВ (shared/singers) ──
-// Раньше профили жили только в localStorage конкретного устройства.
-// Теперь синхронизируются: merge-union (история тональностей объединяется,
-// диапазон расширяется), удаления — через tombstone deleted[name].
-let _singersDeleted = LS.get('cb_singers_deleted', {}); // {name: ts удаления}
-
-function mergeSingerProfiles(local, remote, deleted) {
-  const out = {};
-  const names = new Set([...Object.keys(local || {}), ...Object.keys(remote || {})]);
-  for (const name of names) {
-    const l = (local || {})[name], r = (remote || {})[name];
-    let p;
-    if (l && r) {
-      p = {
-        keysSung: [...new Set([...(r.keysSung || []), ...(l.keysSung || [])])],
-        min: Math.min(l.min, r.min),
-        max: Math.max(l.max, r.max),
-        updatedAt: Math.max(l.updatedAt || 0, r.updatedAt || 0)
-      };
-    } else p = { ...(l || r) };
-    const delTs = deleted[name];
-    if (delTs && delTs >= (p.updatedAt || 0)) continue;
-    out[name] = p;
-  }
-  return out;
-}
-
-function _mergeSingersRemote(remote) {
-  if (!remote) return;
-  for (const [n, ts] of Object.entries(remote.deleted || {})) {
-    if (!(n in _singersDeleted) || _singersDeleted[n] < Number(ts)) _singersDeleted[n] = Number(ts);
-  }
-  LS.set('cb_singers_deleted', _singersDeleted);
-  singerProfiles = mergeSingerProfiles(singerProfiles, remote.profiles, _singersDeleted);
-  LS.set('cb_singers', singerProfiles);
-}
-
-async function pullSingers() {
-  try { _mergeSingersRemote(await fsGet('singers')); } catch(e) {}
-}
-
-let _singersPushTimer = null;
-function pushSingersSoon() { clearTimeout(_singersPushTimer); _singersPushTimer = setTimeout(pushSingers, 1500); }
-async function pushSingers() {
-  if (!navigator.onLine) return;
-  try {
-    _mergeSingersRemote(await fsGet('singers')); // сначала подтягиваем чужое
-    await fsSet('singers', { profiles: singerProfiles, deleted: _singersDeleted, updatedAt: Date.now() });
-  } catch(e) {}
-}
-
-function saveSingerProfiles() { LS.set('cb_singers', singerProfiles); pushSingersSoon(); }
+function saveSingerProfiles() { LS.set('cb_singers', singerProfiles); }
 
 function keyBareNum(key) {
   const bare = String(key || 'C').replace(/m$/, '');
@@ -2661,10 +2189,9 @@ function updateSingerProfileWithKey(name, appliedKey) {
   if (!p) return;
   const num = keyBareNum(appliedKey);
   p.keysSung = p.keysSung || [];
-  if (!p.keysSung.includes(appliedKey)) p.keysSung.push(appliedKey); // без дублей в истории
+  p.keysSung.push(appliedKey);
   p.min = Math.min(p.min, num);
   p.max = Math.max(p.max, num);
-  p.updatedAt = Date.now();
   saveSingerProfiles();
 }
 
@@ -2711,10 +2238,7 @@ function renderSingerPickerList(song) {
   list.querySelectorAll('.remove-singer').forEach(btn => {
     btn.addEventListener('click', e => {
       e.stopPropagation();
-      const name = btn.dataset.name;
-      _singersDeleted[name] = Date.now(); // tombstone — иначе merge вернёт с другого устройства
-      LS.set('cb_singers_deleted', _singersDeleted);
-      delete singerProfiles[name];
+      delete singerProfiles[btn.dataset.name];
       saveSingerProfiles();
       renderSingerPickerList(song);
     });
@@ -2731,9 +2255,7 @@ function openSingerPicker(song) {
     if (!name) return;
     if (singerProfiles[name]) { showToast('Такой солист уже есть'); return; }
     const num = keyBareNum(getDetectedKey(song));
-    delete _singersDeleted[name]; // если когда-то удаляли — снимаем tombstone
-    LS.set('cb_singers_deleted', _singersDeleted);
-    singerProfiles[name] = { keysSung: [], min: num, max: num, updatedAt: Date.now() };
+    singerProfiles[name] = { keysSung: [], min: num, max: num };
     saveSingerProfiles();
     inp.value = '';
     renderSingerPickerList(song);
@@ -2902,77 +2424,224 @@ function renderBlockLabel(label, repeat) {
   return `<div class="block-label-card">${escapeHtml(label)}${repeatHtml}</div>`;
 }
 
-// renderMixed() удалён — был мёртвым кодом (дубль инлайн-рендера в renderSongContent)
+function renderMixed(blocks) {
+  return blocks.map((b, i) => {
+    const color = getBlockColor(b.label, i);
+    if (!b.lines.length && !b.label) return '';
+    if (isAllSingleChordNoText(b.lines)) {
+      const allChords = b.lines
+        .filter(l => /\[[^\]]+\]/.test(l))
+        .map(l => [...l.matchAll(/\[([^\]]+)\]/g)].map(m => m[1])[0]);
+      return `<div class="song-card-block" style="--block-color:${color}">
+        ${renderBlockLabel(b.label, b.repeat)}
+        <div class="block-chords"><div class="chord-row">${allChords.map(c => `<span class="chord-badge">${escapeHtml(c)}</span>`).join('')}</div></div>
+      </div>`;
+    }
+    const collapsed = collapseRepeatingLines(b.lines);
+    const lines = collapsed.map(({line, count}, idx) =>
+      renderLineWithRepeat(line, idx, count)
+    ).filter(Boolean).join('');
+    if (!lines && !b.label) return '';
+    return `<div class="song-card-block" style="--block-color:${color}">
+      ${renderBlockLabel(b.label, b.repeat)}
+      <div class="block-chords">${lines}</div>
+    </div>`;
+  }).join('');
+}
 
 // ═══════════════════════════════════════════
-//  OPTIMIZE BLOCK (режим «Аккорды») — v2, простой конвейер
-//
-//  Инвариант: один ряд на экране = одна строка исходной лирики.
-//  Сжатие ТОЛЬКО на честных повторах:
-//   1) повтор окна из L строк (в ЛЮБОМ месте блока, не только с начала):
-//      L=1 → строка ×N; L≥2 → группа со скобкой ×N;
-//   2) паттерн внутри одной строки: Am F Am F → Am F ×2 (честное деление).
-//  Убраны (v1): склейка коротких строк до 4 аккордов (давала произвольные
-//  «Am F C | G»), пассажи «(C)», недостижимый тип pair, мёртвый hasText.
-//  Выход: [{type:'single', chords, multiplier} | {type:'group', items, multiplier}]
+//  OPTIMIZE BLOCK (chords-only mode)
 // ═══════════════════════════════════════════
 function optimizeBlock(blockLines) {
-  // 1) строки лирики → ряды аккордов
-  const rows = [];
-  for (const line of blockLines) {
-    const ch = [...line.matchAll(/\[([^\]]+)\]/g)].map(m => m[1]);
-    if (ch.length) rows.push(ch);
+  function eq(a, b) { return JSON.stringify(a) === JSON.stringify(b); }
+  function isPassage(base, target) {
+    if (target.length !== base.length + 1) return false;
+    return base.every((v, j) => v === target[j]);
   }
-  if (!rows.length) return [];
-
-  const eqRow = (a, b) => a.length === b.length && a.every((v, i) => v === b[i]);
-  const eqSeg = (a, b) => a.length === b.length && a.every((r, i) => eqRow(r, b[i]));
-
-  // Паттерн внутри одной строки: [Am F Am F] → {pattern:[Am,F], count:2}.
-  // Только честное деление без остатка.
-  function innerPattern(row) {
-    for (let L = 1; L * 2 <= row.length; L++) {
-      if (row.length % L) continue;
-      let ok = true;
-      for (let i = L; i < row.length; i++) { if (row[i] !== row[i % L]) { ok = false; break; } }
-      if (ok) return { pattern: row.slice(0, L), count: row.length / L };
+  function findPattern(arr, minRepeats = 2) {
+    const startL = minRepeats === 1 ? 1 : 2;
+    const maxWithTail = arr.length - 1;
+    for (let L = startL; L <= Math.min(maxWithTail, 8); L++) {
+      const pattern = arr.slice(0, L);
+      const exactCount = arr.length / L;
+      if (Number.isInteger(exactCount) && exactCount >= minRepeats && exactCount >= 2) {
+        let ok = true;
+        for (let i = L; i < arr.length; i++) { if (!eq(arr[i], pattern[i % L])) { ok = false; break; } }
+        if (ok) return { pattern, count: exactCount, exact: true };
+      }
+      // Найти сколько раз паттерн реально повторяется с начала (до первого несовпадения)
+      let realRepeats = 1;
+      outer: for (let rep = 1; rep * L <= arr.length; rep++) {
+        for (let j = 0; j < L; j++) {
+          const idx = rep * L + j;
+          if (idx >= arr.length || !eq(arr[idx], pattern[j])) { break outer; }
+        }
+        realRepeats = rep + 1;
+      }
+      if (realRepeats >= Math.max(minRepeats, 2)) {
+        const tail = arr.slice(realRepeats * L);
+        return { pattern, count: realRepeats, exact: false, tail };
+      }
     }
     return null;
   }
+  const lines = [];
+  for (const line of blockLines) {
+    const ch = [...line.matchAll(/\[([^\]]+)\]/g)].map(m => m[1]);
+    if (!ch.length) continue;
+    // Всегда считаем строку чисто аккордной — текст для схлопывания не важен
+    lines.push({ chords: ch, hasText: false });
+  }
+  if (!lines.length) return [];
 
-  function singleRow(row, mult) {
-    const ip = innerPattern(row);
-    if (ip) return { type: 'single', chords: ip.pattern, multiplier: ip.count * mult };
-    return { type: 'single', chords: row, multiplier: mult };
+  const lineChords = lines.map(l => l.chords);
+  const linePattern = (() => {
+    const fp = findPattern(lineChords, 1);
+    if (fp) return fp;
+    if (lineChords.length >= 3) {
+      const first = lineChords[0];
+      let reps = 1;
+      while (reps < lineChords.length && eq(lineChords[reps], first)) reps++;
+      if (reps >= 2 && reps < lineChords.length) return { pattern: [first], count: reps, exact: false, tail: lineChords.slice(reps) };
+    }
+    return null;
+  })();
+  if (linePattern && linePattern.count >= 2) {
+    const patLen = linePattern.pattern.length;
+    const linesWithChords = blockLines.filter(l => /\[/.test(l));
+    const firstPatternLines = linesWithChords.slice(0, patLen);
+    const inner = optimizeBlock(firstPatternLines);
+    const repeated = inner.length === 1
+      ? [{ ...inner[0], multiplier: (inner[0].multiplier || 1) * linePattern.count }]
+      : [{ type: 'group', items: inner, multiplier: linePattern.count }];
+    if (linePattern.tail && linePattern.tail.length > 0) {
+      const tailLines = linesWithChords.slice(linePattern.count * patLen);
+      const tailResult = tailLines.length > 0 ? optimizeBlock(tailLines) : [];
+      return [...repeated, ...tailResult];
+    }
+    return repeated;
   }
 
-  // 2) проход по строкам: в каждой позиции ищем самое «выгодное» повторяющееся
-  // окно (максимум сжатых строк), начинающееся именно здесь
-  const result = [];
+  const flat = lines.flatMap(l => l.chords);
+
+  if (lines.length >= 3) {
+    const first = lines[0].chords;
+    const second = lines[1].chords;
+    if (second.length === first.length + 1 && first.every((c, i) => c === second[i])) {
+      const restLines = lines.slice(2);
+      const anyMatchesFirst = restLines.some(l => eq(l.chords, first));
+      if (!anyMatchesFirst) {
+        const passageChord = second[second.length - 1];
+        const restResult = restLines.length > 0 ? optimizeBlock(restLines.map(l => l.chords.map(c => `[${c}]`).join(''))) : [];
+        return [{ type: 'single', chords: first, multiplier: 1, passage: passageChord }, ...restResult];
+      }
+    }
+  }
+
+  const lineBoundaries2 = new Set();
+  { let a=0; for(const l of lines){a+=l.chords.length; lineBoundaries2.add(a);} }
+  const pr = (() => {
+    const r = findPattern(flat);
+    if (!r || r.count < 2) return null;
+    const L = r.pattern.length;
+    // Для паттерна длиной 1 (один повторяющийся аккорд) границы строк не важны
+    if (L === 1) return r;
+    for (let i = 1; i <= r.count; i++) { if (!lineBoundaries2.has(i * L)) return null; }
+    return r;
+  })();
+  if (pr && pr.count >= 2) {
+    const p = pr.pattern;
+    const half = Math.floor(p.length / 2);
+    const tail = pr.tail && pr.tail.length > 0 ? [{ type: 'single', chords: pr.tail, multiplier: 1 }] : [];
+    if (p.length >= 4 && p.length % 2 === 0 && !eq(p.slice(0, half), p.slice(half))) {
+      return [{ type: 'pair', chords: p.slice(0, half), chords2: p.slice(half), multiplier: pr.count }, ...tail];
+    }
+    if (tail.length > 0) return [{ type: 'single', chords: p, multiplier: pr.count }, ...tail];
+    return [{ type: 'single', chords: p, multiplier: pr.count }];
+  }
+
+  {
+    const lineBoundaries = new Set();
+    let acc = 0;
+    for (const l of lines) { acc += l.chords.length; lineBoundaries.add(acc); }
+    for (let leadLen = 1; leadLen <= Math.min(8, flat.length - 1); leadLen++) {
+      if (!lineBoundaries.has(leadLen)) continue;
+      const leadChords = flat.slice(0, leadLen);
+      let repeats = 1;
+      while (repeats * leadLen < flat.length) {
+        const nextStart = repeats * leadLen;
+        const nextEnd = (repeats + 1) * leadLen;
+        if (!lineBoundaries.has(nextEnd)) break;
+        const next = flat.slice(nextStart, nextEnd);
+        if (!eq(next, leadChords)) break;
+        repeats++;
+      }
+      if (repeats >= 2) {
+        const tail = flat.slice(repeats * leadLen);
+        const tailResult = tail.length > 0 ? [{ type: 'single', chords: tail, multiplier: 1 }] : [];
+        return [{ type: 'single', chords: leadChords, multiplier: repeats }, ...tailResult];
+      }
+    }
+  }
+
+  const expandedChunks = [];
+  for (const { chords, hasText } of lines) {
+    if (hasText) { expandedChunks.push(chords); continue; }
+    if (chords.length >= 2) {
+      // Всегда пробуем найти внутренний паттерн (даже для одной строки)
+      const inner = findPattern(chords, 1);
+      if (inner && inner.count >= 2) {
+        for (let k = 0; k < inner.count; k++) expandedChunks.push([...inner.pattern]);
+        continue;
+      }
+    }
+    expandedChunks.push(chords);
+  }
+
+  const merged = [];
   let i = 0;
-  while (i < rows.length) {
-    let bestLen = 0, bestCount = 0;
-    const maxLen = Math.min(8, Math.floor((rows.length - i) / 2));
-    for (let L = 1; L <= maxLen; L++) {
-      const seg = rows.slice(i, i + L);
-      let count = 1;
-      while (eqSeg(seg, rows.slice(i + count * L, i + (count + 1) * L))) count++;
-      if (count >= 2 && count * L > bestCount * bestLen) { bestLen = L; bestCount = count; }
+  while (i < expandedChunks.length) {
+    let buf = [...expandedChunks[i]];
+    const prevMerged = merged[merged.length - 1];
+    const isRepeatOfPrev = prevMerged && eq(buf, prevMerged);
+    if (!isRepeatOfPrev) {
+      while (
+        buf.length <= 2 &&
+        i + 1 < expandedChunks.length &&
+        expandedChunks[i + 1].length <= 2 &&
+        buf.length + expandedChunks[i + 1].length <= 4 &&
+        !eq(buf, expandedChunks[i + 1]) &&
+        !eq(expandedChunks[i + 1], expandedChunks[i + 2] || [])
+      ) { i++; buf = [...buf, ...expandedChunks[i]]; }
     }
-    if (bestLen === 1) {
-      result.push(singleRow(rows[i], bestCount)); // одинаковая строка ×N
-      i += bestCount;
-    } else if (bestLen >= 2) {
-      result.push({
-        type: 'group',
-        items: rows.slice(i, i + bestLen).map(r => ({ type: 'single', chords: r, multiplier: 1 })),
-        multiplier: bestCount
-      });
-      i += bestLen * bestCount;
-    } else {
-      result.push(singleRow(rows[i], 1)); // без повторов — как есть
-      i++;
+    merged.push(buf);
+    i++;
+  }
+
+  const pairC = [];
+  let pi = 0;
+  while (pi < merged.length) {
+    const a = merged[pi], b = merged[pi + 1], a2 = merged[pi + 2], b2 = merged[pi + 3];
+    if (b && a2 && b2 && eq(a, a2) && eq(b, b2) && !eq(a, b)) {
+      pairC.push({ type: 'pair', chords: a, chords2: b, multiplier: 2 });
+      pi += 4; continue;
     }
+    pairC.push({ type: 'single', chords: merged[pi] });
+    pi++;
+  }
+
+  const result = [];
+  let ci = 0;
+  while (ci < pairC.length) {
+    const item = pairC[ci];
+    if (item.type === 'pair') { result.push(item); ci++; continue; }
+    const current = item.chords;
+    const next = pairC[ci + 1];
+    let mul = 1;
+    while (ci + mul < pairC.length && pairC[ci + mul].type === 'single' && eq(current, pairC[ci + mul].chords)) mul++;
+    if (mul > 1) { result.push({ type: 'single', chords: current, multiplier: mul }); ci += mul; continue; }
+    result.push({ type: 'single', chords: current, multiplier: 1 });
+    ci++;
   }
   return result;
 }
@@ -2997,7 +2666,138 @@ function getManualChordsLayout(song, bi) {
   return entry;
 }
 
-function renderChords(blocks, song, transpose, notation) {
+// ═══════════════════════════════════════════
+//  GEMINI AI — улучшение группировки квадратов в режиме "Аккорды"
+//  Одноразовый вызов по кнопке из меню песни (не при каждом рендере).
+//  Результат сохраняется в song.chordsOnlyLayout — тот же слой, что и
+//  ручное редактирование, поэтому дальше используется штатный
+//  getManualChordsLayout()/manualLayoutToHtml() без каких-либо изменений
+//  в рендере.
+// ═══════════════════════════════════════════
+const GEMINI_KEY_LS = 'cb_gemini_key';
+function getGeminiKey() { return LS.get(GEMINI_KEY_LS, '') || ''; }
+function saveGeminiKey(k) { LS.set(GEMINI_KEY_LS, (k || '').trim()); }
+
+function extractLineChords(line) {
+  const chords = [];
+  for (const m of line.matchAll(/\[([^\]]+)\]/g)) chords.push(m[1]);
+  return chords;
+}
+
+function buildGeminiChordsPayload(song) {
+  const blocks = parseSong(song.lyrics, 0);
+  const payload = [];
+  blocks.forEach((b, bi) => {
+    const lines = b.lines.map(extractLineChords).filter(l => l.length);
+    if (lines.length) payload.push({ index: bi, label: b.label || '', lines });
+  });
+  return payload;
+}
+
+const GEMINI_CHORDS_PROMPT = 'Ты помогаешь музыкальному приложению для аккордовых партитур правильно '
+  + 'сгруппировать аккорды в "квадраты" (визуальные строки) для режима отображения '
+  + '"только аккорды" (без слов).\n\n'
+  + 'На входе — блоки песни (куплет/припев/бридж и т.д.), в каждом блоке — '
+  + 'построчный список аккордов в ТОМ ЖЕ порядке, что в оригинальном тексте '
+  + '(каждый элемент "lines" — это один исходный текстовый ряд с аккордами).\n\n'
+  + 'Твоя задача — решить, как эти строки должны быть сгруппированы в квадраты '
+  + '(rows) при показе БЕЗ слов, по музыкальному смыслу:\n'
+  + '1. Если несколько соседних строк вместе образуют одну музыкальную фразу '
+  + '(например, две строки по 1-2 аккорда, которые вместе дают ту же длину '
+  + 'фразы — то же число аккордов на фразу — что и другие строки этого же '
+  + 'блока), их нужно ОБЪЕДИНИТЬ в один ряд (row).\n'
+  + '2. Если строка уже сама по себе целая фраза (совпадает по длине с '
+  + 'остальными фразами в блоке), она остаётся отдельным рядом.\n'
+  + '3. Никогда не меняй порядок аккордов и не выдумывай/не убирай аккорды — '
+  + 'можно только группировать существующие аккорды из "lines" в rows, сохраняя их порядок.\n'
+  + '4. Ориентируйся на паттерн: в блоке обычно есть некая "стандартная" длина '
+  + 'фразы — используй её как подсказку для объединения более коротких строк.\n\n'
+  + 'Пример:\nВход: lines = [["E"], ["D"]]\nВыход: rows = [["E","D"]] '
+  + '(две строки по 1 аккорду — это половины одной фразы)\n\n'
+  + 'Пример:\nВход: lines = [["F#m","D","A","E"], ["F#m","D","A","E"], ["F#m","D"], ["A","E"], ["F#m","D","A","E"]]\n'
+  + 'Выход: rows = [["F#m","D","A","E"], ["F#m","D","A","E"], ["F#m","D","A","E"], ["F#m","D","A","E"]] '
+  + '(3-я и 4-я строки по 2 аккорда объединились в одну фразу по образцу соседних строк)\n\n'
+  + 'Верни результат СТРОГО в виде JSON по заданной схеме — для каждого блока '
+  + 'входного массива (сохраняя его "index") дай итоговый список "rows". '
+  + 'Если для блока группировка не нужна (строки уже и есть фразы) — верни '
+  + 'rows = lines как есть, без изменений.';
+
+async function callGeminiChordsLayout(song) {
+  const apiKey = getGeminiKey();
+  if (!apiKey) throw new Error('Нет API-ключа Gemini (см. Настройки)');
+  const payload = buildGeminiChordsPayload(song);
+  if (!payload.length) throw new Error('В песне нет блоков с аккордами');
+
+  const body = {
+    contents: [{ parts: [{ text: GEMINI_CHORDS_PROMPT + '\n\nВходные блоки:\n' + JSON.stringify(payload) }] }],
+    generationConfig: {
+      responseMimeType: 'application/json',
+      responseSchema: {
+        type: 'OBJECT',
+        properties: {
+          blocks: {
+            type: 'ARRAY',
+            items: {
+              type: 'OBJECT',
+              properties: {
+                index: { type: 'INTEGER' },
+                rows: { type: 'ARRAY', items: { type: 'ARRAY', items: { type: 'STRING' } } }
+              },
+              required: ['index', 'rows']
+            }
+          }
+        },
+        required: ['blocks']
+      }
+    }
+  };
+
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), 25000);
+  let res;
+  try {
+    res = await fetch('https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=' + encodeURIComponent(apiKey), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+      signal: ctrl.signal
+    });
+  } finally {
+    clearTimeout(timer);
+  }
+  if (!res.ok) {
+    const errText = await res.text().catch(() => '');
+    throw new Error('Ошибка Gemini (HTTP ' + res.status + ')' + (errText ? ': ' + errText.slice(0, 200) : ''));
+  }
+  const data = await res.json();
+  const text = data && data.candidates && data.candidates[0] && data.candidates[0].content
+    && data.candidates[0].content.parts && data.candidates[0].content.parts[0]
+    && data.candidates[0].content.parts[0].text;
+  if (!text) throw new Error('Пустой ответ от Gemini');
+  let parsed;
+  try { parsed = JSON.parse(text); } catch (e) { throw new Error('Gemini вернул невалидный JSON'); }
+  if (!parsed || !Array.isArray(parsed.blocks)) throw new Error('Неожиданный формат ответа Gemini');
+  return parsed.blocks;
+}
+
+async function improveChordsWithGemini(song) {
+  const blocksResult = await callGeminiChordsLayout(song);
+  const layout = song.chordsOnlyLayout ? Object.assign({}, song.chordsOnlyLayout) : {};
+  let changed = 0;
+  blocksResult.forEach(b => {
+    if (typeof b.index !== 'number' || !Array.isArray(b.rows) || !b.rows.length) return;
+    layout[b.index] = { rows: b.rows };
+    changed++;
+  });
+  if (!changed) throw new Error('Gemini не вернул ни одной группировки');
+  song.chordsOnlyLayout = layout;
+  const idx = songsCache.findIndex(s => s.id === song.id);
+  if (idx !== -1) songsCache[idx].chordsOnlyLayout = layout;
+  await saveSingleSong(song);
+  invalidateSongCache(song.id);
+}
+
+function renderChords(blocks, song) {
   function blockChordFlat(block) {
     const flat = [];
     for (const l of block.lines) for (const m of l.matchAll(/\[([^\]]+)\]/g)) flat.push(m[1]);
@@ -3044,22 +2844,31 @@ function renderChords(blocks, song, transpose, notation) {
         +'</div>'
         +'</div>';
     }
+    if (sq.type === 'pair') {
+      const rowA = sq.chords.map(c => '<span class="chord-badge">'+escapeHtml(c)+'</span>').join('');
+      const rowB = sq.chords2.map(c => '<span class="chord-badge">'+escapeHtml(c)+'</span>').join('');
+      const multHtml = '<span class="repeat-badge repeat-inline">\xd7'+sq.multiplier+'</span>';
+      return '<div class="chords-only-row" style="margin-bottom:6px;align-items:center;flex-wrap:wrap;">'
+        +'<span style="display:inline-flex;align-items:center;gap:3px;flex-wrap:wrap">'+rowA+'</span>'
+        +'<span style="color:var(--muted);font-size:11px;padding:0 4px">|</span>'
+        +'<span style="display:inline-flex;align-items:center;gap:3px;flex-wrap:wrap">'+rowB+'</span>'
+        +multHtml+'</div>';
+    }
     const chordsHtml = sq.chords.map(c => '<span class="chord-badge">'+escapeHtml(c)+'</span>').join('');
-    const multHtml = sq.multiplier > 1 ? '<span class="repeat-badge repeat-inline">\xd7'+sq.multiplier+'</span>' : '';
-    return '<div class="chords-only-row" style="margin-bottom:6px;align-items:center;flex-wrap:nowrap;overflow:visible;">'+chordsHtml+multHtml+'</div>';
+    const passageHtml = sq.passage ? '<span class="passage-badge">('+escapeHtml(sq.passage)+')</span>' : '';
+    const mulN = sq.multiplier > 1 ? sq.multiplier : (sq.lineRepeat > 1 ? sq.lineRepeat : 0);
+    const multHtml = mulN > 1 ? '<span class="repeat-badge repeat-inline">\xd7'+mulN+'</span>' : '';
+    return '<div class="chords-only-row" style="margin-bottom:6px;align-items:center;flex-wrap:nowrap;overflow:visible;">'+chordsHtml+passageHtml+multHtml+'</div>';
   }
 
   // Ручная раскладка рендерится напрямую построчно — без optimizeBlock,
   // без ×N, без pair-склейки: это именно то, что пользователь сам
-  // разложил руками в изолированном редакторе. Раскладка хранится в
-  // ОРИГИНАЛЬНОЙ тональности (редактор работает с нетранспонированными
-  // данными), поэтому здесь применяем текущую транспозицию и нотацию —
-  // раньше этот слой их игнорировал и при транспонировании песни аккорды
-  // в режиме «Аккорды» оставались в старой тональности.
+  // разложил руками в изолированном редакторе, автоматика здесь больше
+  // не участвует ни в группировке, ни в дедупликации строк.
   function manualLayoutToHtml(layout) {
     return layout.rows.map(row => {
       if (!row.length) return '';
-      const chordsHtml = row.map(c => '<span class="chord-badge">'+escapeHtml(transposeChord(c, transpose || 0, notation))+'</span>').join('');
+      const chordsHtml = row.map(c => '<span class="chord-badge">'+escapeHtml(c)+'</span>').join('');
       return '<div class="chords-only-row" style="margin-bottom:6px;align-items:center;flex-wrap:wrap;">'+chordsHtml+'</div>';
     }).join('');
   }
@@ -3183,7 +2992,7 @@ function renderSongContent(song, transpose) {
     }
   );
 
-  const html = mixed + renderChords(blocks, song, transpose, notation);
+  const html = mixed + renderChords(blocks, song);
   if (_renderCache.size >= RENDER_CACHE_MAX) {
     const firstKey = _renderCache.keys().next().value;
     _renderCache.delete(firstKey);
@@ -3235,16 +3044,6 @@ function getDetectedKey(song) {
   return detected;
 }
 
-// ЕДИНЫЙ источник отображаемой тональности для ВСЕХ мест интерфейса:
-// карточки списка, элементы сет-листа, окно синхронизации, пикер, шапка
-// песни. Раньше часть мест читала сырое поле song.key (ручное, из формы),
-// а часть — детектированную тональность, и одна и та же песня показывала
-// разные значения в разных местах. song.key остаётся в данных как есть
-// (его использует бот и экспорт), но интерфейс на него больше не смотрит.
-function getDisplayKey(song, offset) {
-  return transposeKey(getDetectedKey(song), offset || 0, getSongNotation(song.id));
-}
-
 // ═══════════════════════════════════════════
 //  VIRTUAL SCROLL
 // ═══════════════════════════════════════════
@@ -3258,9 +3057,7 @@ const VIRTUAL = (() => {
 
   function mount(container) {
     _container = container;
-    // capture-флаг должен совпадать с addEventListener (false), иначе
-    // removeEventListener не находит листенер и они копятся при каждом mount
-    if (_scrollHandler) window.removeEventListener('scroll', _scrollHandler);
+    if (_scrollHandler) window.removeEventListener('scroll', _scrollHandler, true);
     _scrollHandler = debounce(render, 16);
     window.addEventListener('scroll', _scrollHandler, { passive: true });
     if (_resizeOb) _resizeOb.disconnect();
@@ -3288,7 +3085,7 @@ const VIRTUAL = (() => {
     _container.querySelectorAll('.song-card').forEach(card => { card.addEventListener('click', () => openSong(card.dataset.id)); });
   }
   function destroy() {
-    if (_scrollHandler) window.removeEventListener('scroll', _scrollHandler);
+    if (_scrollHandler) window.removeEventListener('scroll', _scrollHandler, true);
     if (_resizeOb) _resizeOb.disconnect();
     _list = []; _container = null;
   }
@@ -3297,9 +3094,9 @@ const VIRTUAL = (() => {
 
 function renderSongCard(s) {
   const offset = transposeMap[s.id] || 0;
-  const keyDisplay = getDisplayKey(s, offset) + (offset
-    ? `<span style="font-size:9px;opacity:.7;margin-left:2px">(${offset > 0 ? '+' : ''}${offset})</span>`
-    : '');
+  const keyDisplay = offset
+    ? transposeKey(s.key || 'C', offset, getSongNotation(s.id)) + `<span style="font-size:9px;opacity:.7;margin-left:2px">(${offset > 0 ? '+' : ''}${offset})</span>`
+    : (s.key || '?');
   const tagsHtml = (s.tags || []).map(t =>
     `<span class="tag" style="cursor:pointer" onclick="event.stopPropagation();setTagFilter('${escapeHtml(t)}')">${escapeHtml(t)}</span>`
   ).join('');
@@ -3442,7 +3239,7 @@ async function renderSongs(filter = '') {
   if (statsEl) {
     if (filter && list.length > 0) statsEl.textContent = `Найдено: ${list.length}`;
     else if (filter && list.length === 0) statsEl.textContent = 'Ничего не найдено';
-    else statsEl.textContent = `${songsCache.length} ${plural(songsCache.length,'песня','песни','песен')}`;
+    else statsEl.textContent = `${songsCache.length} песен`;
   }
 
   if (!list.length) {
@@ -3477,7 +3274,7 @@ function _openSongDo(song, ctx) {
 let _swipeController = null;
 
 function renderSongView(song, animDir) {
-  const currentKey = getDisplayKey(song, transposeOffset);
+  const currentKey = transposeKey(getDetectedKey(song), transposeOffset, getSongNotation(song.id));
   const headerTitle = document.getElementById('header-title');
   if (headerTitle) headerTitle.innerHTML = `<span style="font-size:15px;font-weight:800">${escapeHtml(song.title)}</span>`;
 
@@ -3611,11 +3408,6 @@ function renderSongView(song, animDir) {
 // просто пропускает логику скрытия, если мы не на песне, но не умирает.
 let _svLastScrollY = 0;
 let _svHeaderHidden = false;
-// Гистерезис вместо мгновенной реакции: панель прячется только после
-// ~28px НЕПРЕРЫВНОГО скролла вниз и возвращается после ~14px вверх.
-// Микродрожание пальца и инерционные отскоки больше не дёргают её туда-сюда.
-let _svAccDown = 0, _svAccUp = 0;
-const SV_HIDE_AFTER = 28, SV_SHOW_AFTER = 14;
 function _svTick() {
   if (currentPage === 'song-view') {
     const header = document.getElementById('song-header');
@@ -3623,21 +3415,11 @@ function _svTick() {
       const y = window.scrollY || window.pageYOffset || 0;
       const delta = y - _svLastScrollY;
       if (y < 40) {
-        // У самого верха панель всегда видима
-        _svAccDown = 0; _svAccUp = 0;
         if (_svHeaderHidden) { header.classList.remove('sv-hidden'); _svHeaderHidden = false; }
-      } else if (delta > 0) {
-        _svAccUp = 0;
-        _svAccDown += delta;
-        if (_svAccDown > SV_HIDE_AFTER && !_svHeaderHidden) {
-          header.classList.add('sv-hidden'); _svHeaderHidden = true;
-        }
-      } else if (delta < 0) {
-        _svAccDown = 0;
-        _svAccUp += -delta;
-        if (_svAccUp > SV_SHOW_AFTER && _svHeaderHidden) {
-          header.classList.remove('sv-hidden'); _svHeaderHidden = false;
-        }
+      } else if (delta > 4 && !_svHeaderHidden) {
+        header.classList.add('sv-hidden'); _svHeaderHidden = true;
+      } else if (delta < -4 && _svHeaderHidden) {
+        header.classList.remove('sv-hidden'); _svHeaderHidden = false;
       }
       _svLastScrollY = y;
     }
@@ -3647,7 +3429,6 @@ function _svTick() {
 requestAnimationFrame(_svTick);
 function _svStartWatch() {
   _svLastScrollY = window.scrollY || window.pageYOffset || 0;
-  _svAccDown = 0; _svAccUp = 0;
 }
 
 function navigateSetlistSong(dir, swipeAnim) {
@@ -3861,19 +3642,14 @@ document.getElementById('delete-song-btn').addEventListener('click', () => {
       songsCache = songsCache.filter(s => s.id !== id);
       invalidateSongCache(id);
       await IDB.deleteSong(id);
-      // Tombstone — чтобы merge-синхронизация не «воскресила» песню
-      _tombSongs[id] = Date.now(); _saveTombs(); _pushDeletedDoc();
       closeOverlay('overlay-add-song');
       showPage('songs');
       showToastUndo('Песня удалена', async () => {
-        if (_lastDelSong) {
-          delete _tombSongs[_lastDelSong.id]; _saveTombs(); _pushDeletedDoc();
-          _lastDelSong.updatedAt = Date.now(); // свежее любого tombstone на других устройствах
-          songsCache = [_lastDelSong, ...songsCache];
-          await saveSingleSong(_lastDelSong); renderSongs(); _lastDelSong = null;
-        }
+        if (_lastDelSong) { songsCache = [_lastDelSong, ...songsCache]; await saveSingleSong(_lastDelSong); renderSongs(); _lastDelSong = null; }
       });
-      await saveSongs(songsCache);
+      if (navigator.onLine) {
+        try { await fsSet('songs', { list: songsCache, updatedAt: Date.now() }); } catch(e) {}
+      }
     }
   });
 });
@@ -3921,7 +3697,7 @@ function renderSetlists() {
     <div class="setlist-card" data-id="${sl.id}" style="display:flex;align-items:center;gap:10px">
       <div style="flex:1;min-width:0;cursor:pointer" class="sl-card-body">
         <div class="setlist-title">${escapeHtml(sl.name)}</div>
-        <div class="setlist-meta">${sl.date ? escapeHtml(sl.date)+' · ' : ''}${(sl.songs || []).length} ${plural((sl.songs || []).length,'песня','песни','песен')}</div>
+        <div class="setlist-meta">${sl.date ? escapeHtml(sl.date)+' · ' : ''}${(sl.songs || []).length} песен</div>
       </div>
       <button class="icon-btn sl-menu-btn overflow-trigger" data-id="${sl.id}" aria-label="Меню сет-листа">•••</button>
     </div>
@@ -3962,7 +3738,7 @@ function renderSetlistView(sl) {
         ? `<div class="empty" style="padding:32px 0"><div class="empty-icon">🎵</div><p>Нажмите «＋ Добавить» чтобы добавить песни</p></div>`
         : slSongs.map((s,i) => {
             const offset = transposeMap[s.id] || 0;
-            const displayKey = getDisplayKey(s, offset);
+            const displayKey = offset ? transposeKey(s.key||'C', offset, getSongNotation(s.id)) : (s.key||'?');
             const offsetLabel = offset ? ` <span style="font-size:10px;color:var(--muted)">(${offset>0?'+':''}${offset})</span>` : '';
             return `<div class="setlist-song-item" data-song-id="${s.id}" data-sl-idx="${i}">
               <span class="drag-handle" aria-label="Перетащить">☰</span>
@@ -4000,7 +3776,6 @@ function renderSetlistView(sl) {
       const cur = getSlById(liveSl.id);
       if (!cur) return;
       cur.songs = (cur.songs||[]).filter(id => id !== btn.dataset.id);
-      cur.updatedAt = Date.now();
       await saveSetlists();
       renderSetlistView(cur);
       showToast('Песня убрана');
@@ -4042,13 +3817,7 @@ function initDragReorder(slId) {
     });
   }
 
-  // Pointer Events вместо touch-only — единая логика для мыши, тача и пера.
-  // Раньше здесь были только touchstart/touchmove/touchend, поэтому на
-  // десктопе (мышь) перетаскивание вообще не срабатывало и вместо него
-  // браузер запускал обычное выделение текста.
-  let activePointerId = null;
-
-  list.addEventListener('pointerdown', e => {
+  list.addEventListener('touchstart', e => {
     const handle = e.target.closest('.drag-handle');
     if (!handle) return;
     dragEl = handle.closest('.setlist-song-item');
@@ -4057,25 +3826,23 @@ function initDragReorder(slId) {
     startIndex = items.indexOf(dragEl);
     currentDropIndex = startIndex;
     itemHeight = dragEl.offsetHeight + 6;
-    startY = e.clientY;
-    activePointerId = e.pointerId;
+    startY = e.touches[0].clientY;
     dragEl.classList.add('lifted');
     dragEl.style.transition = 'box-shadow 0.2s, background 0.2s';
     dragEl.style.zIndex = '10';
-    try { handle.setPointerCapture(e.pointerId); } catch (err) {}
     e.preventDefault();
-  }, { signal });
+  }, { passive: false, signal });
 
-  list.addEventListener('pointermove', e => {
-    if (!dragEl || e.pointerId !== activePointerId) return;
+  list.addEventListener('touchmove', e => {
+    if (!dragEl) return;
     e.preventDefault();
-    const dy = e.clientY - startY;
+    const dy = e.touches[0].clientY - startY;
     dragEl.style.transform = `scale(1.04) translateY(${dy}px)`;
     const newIdx = Math.max(0, Math.min(getItems().length-1, startIndex + Math.round(dy / itemHeight)));
     if (newIdx !== currentDropIndex) { currentDropIndex = newIdx; applyShifts(startIndex, currentDropIndex); }
   }, { passive: false, signal });
 
-  async function finishDrag() {
+  list.addEventListener('touchend', async () => {
     if (!dragEl) return;
     getItems().forEach(item => { item.style.transition = 'transform 0.25s cubic-bezier(.4,0,.2,1)'; item.style.transform = 'translateY(0) scale(1)'; });
     dragEl.classList.remove('lifted');
@@ -4089,11 +3856,7 @@ function initDragReorder(slId) {
       await saveReorder(slId, list);
     }
     dragEl = null;
-    activePointerId = null;
-  }
-
-  list.addEventListener('pointerup', finishDrag, { signal });
-  list.addEventListener('pointercancel', finishDrag, { signal });
+  }, { signal });
 }
 
 async function saveReorder(slId, list) {
@@ -4101,7 +3864,6 @@ async function saveReorder(slId, list) {
   const realSl = setlistsCache.find(s => s.id === slId);
   if (!realSl) return;
   realSl.songs = newOrder;
-  realSl.updatedAt = Date.now();
   list.querySelectorAll('.setlist-song-num').forEach((el, i) => el.textContent = (i+1) + '.');
   await saveSetlists();
   showToast('Порядок сохранён');
@@ -4110,7 +3872,7 @@ async function saveReorder(slId, list) {
 document.getElementById('save-setlist-btn').addEventListener('click', async () => {
   const name = document.getElementById('inp-setlist-name').value.trim();
   if (!name) { showToast('Введите название'); return; }
-  const sl = { id: uid(), name, date: document.getElementById('inp-setlist-date').value, songs: [], createdAt: Date.now(), updatedAt: Date.now() };
+  const sl = { id: uid(), name, date: document.getElementById('inp-setlist-date').value, songs: [], createdAt: Date.now() };
   setlistsCache.unshift(sl);
   await saveSetlists();
   closeOverlay('overlay-add-setlist');
@@ -4127,7 +3889,7 @@ function openPickSetlist(songId) {
       const already = (sl.songs||[]).includes(songId);
       return `<div class="setlist-card" data-id="${sl.id}" style="${already ? 'opacity:.5;pointer-events:none' : ''}">
         <div class="setlist-title">${escapeHtml(sl.name)} ${already ? '✓' : ''}</div>
-        <div class="setlist-meta">${sl.date||''} · ${(sl.songs||[]).length} ${plural((sl.songs||[]).length,'песня','песни','песен')}</div>
+        <div class="setlist-meta">${sl.date||''} · ${(sl.songs||[]).length} песен</div>
       </div>`;
     }).join('');
     list.querySelectorAll('.setlist-card').forEach(card => {
@@ -4136,7 +3898,6 @@ function openPickSetlist(songId) {
         if (!sl) return;
         sl.songs = sl.songs || [];
         if (!sl.songs.includes(songId)) sl.songs.push(songId);
-        sl.updatedAt = Date.now();
         await saveSetlists();
         closeOverlay('overlay-pick-setlist');
         showToast('Добавлено в сет-лист!');
@@ -4216,7 +3977,7 @@ async function fsGetSafe(docId) {
   try {
     const ctrl = new AbortController();
     const timer = setTimeout(() => ctrl.abort(), 12000);
-    const r = await fsFetch(`${FB_BASE}/${docId}?key=${FB_API_KEY}`, { signal: ctrl.signal });
+    const r = await fetch(`${FB_BASE}/${docId}?key=${FB_API_KEY}`, { signal: ctrl.signal });
     clearTimeout(timer);
     if (r.status === 404) return { notFound: true };
     if (!r.ok) return { error: `HTTP ${r.status}` };
@@ -4233,7 +3994,7 @@ async function fsSetSafe(docId, data) {
     const timer = setTimeout(() => ctrl.abort(), 12000);
     const fields = {};
     for (const k of Object.keys(data)) fields[k] = toFsValue(data[k]);
-    const r = await fsFetch(`${FB_BASE}/${docId}?key=${FB_API_KEY}`, {
+    const r = await fetch(`${FB_BASE}/${docId}?key=${FB_API_KEY}`, {
       method:'PATCH', headers:{'Content-Type':'application/json'},
       body: JSON.stringify({ fields }), signal: ctrl.signal
     });
@@ -4249,7 +4010,7 @@ async function fsDeleteSafe(docId) {
   try {
     const ctrl = new AbortController();
     const timer = setTimeout(() => ctrl.abort(), 12000);
-    const r = await fsFetch(`${FB_BASE}/${docId}?key=${FB_API_KEY}`, {
+    const r = await fetch(`${FB_BASE}/${docId}?key=${FB_API_KEY}`, {
       method: 'DELETE', signal: ctrl.signal
     });
     clearTimeout(timer);
@@ -4322,8 +4083,8 @@ function renderSyncBody(remote, slId, songs) {
   for (const s of songs) {
     const local = transposeMap[s.id] || 0;
     const remoteVal = remoteKeys ? (remoteKeys[s.id] !== undefined ? Number(remoteKeys[s.id]) : null) : null;
-    const localKey = getDisplayKey(s, local);
-    const remoteKey = remoteVal !== null ? getDisplayKey(s, remoteVal) : null;
+    const localKey = transposeKey(s.key || 'C', local, getSongNotation(s.id));
+    const remoteKey = remoteVal !== null ? transposeKey(s.key || 'C', remoteVal, getSongNotation(s.id)) : null;
 
     let dotClass, statusText;
     if (remoteVal === null) {
@@ -4354,7 +4115,7 @@ function renderSyncBody(remote, slId, songs) {
 
   if (nDiff > 0) {
     html += `<div style="margin-top:8px;padding:8px 12px;background:rgba(255,183,77,0.1);border:1px solid rgba(255,183,77,0.25);border-radius:10px;font-size:12px;color:var(--yellow)">
-      ⚠️ ${nDiff} ${plural(nDiff,'песня отличается','песни отличаются','песен отличаются')} от сервера
+      ⚠️ ${nDiff} ${nDiff === 1 ? 'песня отличается' : nDiff < 5 ? 'песни отличаются' : 'песен отличаются'} от сервера
     </div>`;
   } else if (remoteKeys && nOk === songs.length) {
     html += `<div style="margin-top:8px;padding:8px 12px;background:rgba(76,175,125,0.1);border:1px solid rgba(76,175,125,0.25);border-radius:10px;font-size:12px;color:var(--green)">
@@ -4447,8 +4208,8 @@ async function syncSingleSong(song, slId) {
   } else {
     // Одиночная песня — маленький inline-диалог
     const remoteVal = remoteKeys ? Number(remoteKeys[song.id] ?? 0) : 0;
-    const localKey = getDisplayKey(song, transposeOffset);
-    const remoteKey = getDisplayKey(song, remoteVal);
+    const localKey = transposeKey(song.key || 'C', transposeOffset, getSongNotation(song.id));
+    const remoteKey = transposeKey(song.key || 'C', remoteVal, getSongNotation(song.id));
     const ts = Number(remote.ts);
     const diff = Math.max(0, Math.round((Date.now() - ts) / 60000));
     const timeStr = diff < 1 ? 'только что' : diff + ' мин. назад';
@@ -4504,6 +4265,7 @@ function showSongOverflowMenu(song, btnEl) {
   m.innerHTML='<div class="overflow-menu-item" id="om-sl">📋 Добавить в сет-лист</div>'
     +'<div class="overflow-menu-item" id="om-si">🎤 Выбрать солиста</div>'
     +'<div class="overflow-menu-item" id="om-nt">'+_notationLabel+'</div>'
+    +'<div class="overflow-menu-item" id="om-ai">✨ Улучшить аккорды (AI)</div>'
     +'<div class="overflow-menu-item" id="om-ed">✏️ Редактировать</div>'
     +'<div class="overflow-menu-item" id="om-pr">🖨 Распечатать / PDF</div>'
     +'<div class="overflow-menu-item" id="om-sy">📡 Синхронизировать тональности</div>';
@@ -4522,6 +4284,32 @@ function showSongOverflowMenu(song, btnEl) {
     invalidateSongCache(song.id);
     renderSongView(song);
     showToast(next === 'flat' ? '♭ Бемоли для этой песни' : '♯ Диезы для этой песни');
+  });
+  document.getElementById('om-ai').addEventListener('click', async e => {
+    e.stopPropagation();
+    if (!getGeminiKey()) {
+      close();
+      showToast('Добавьте API-ключ Gemini в Настройках');
+      updateSettingsUI();
+      openOverlay('overlay-settings');
+      const keyInput = document.getElementById('settings-gemini-key');
+      if (keyInput) setTimeout(() => keyInput.focus(), 350);
+      return;
+    }
+    const item = document.getElementById('om-ai');
+    item.textContent = '⏳ Улучшаем через Gemini...';
+    item.style.pointerEvents = 'none';
+    item.style.opacity = '0.6';
+    try {
+      await improveChordsWithGemini(song);
+      renderSongView(song);
+      showToast('✨ Схлопывание аккордов улучшено');
+    } catch (err) {
+      console.error('Gemini improve error:', err);
+      showToast('Не удалось улучшить: ' + (err && err.message ? err.message : 'ошибка'));
+    } finally {
+      close();
+    }
   });
   document.getElementById('om-ed').addEventListener('click',()=>{close();openEditSong(currentSongId);});
   document.getElementById('om-pr').addEventListener('click',()=>{close();printSong(song);});
@@ -4560,14 +4348,9 @@ async function deleteSetlist(slId) {
   _lastDelSl=setlistsCache.find(s=>s.id===slId)||null;
   setlistsCache=setlistsCache.filter(s=>s.id!==slId);
   try{await IDB.deleteSetlist(slId);}catch(e){}
-  _tombSetlists[slId] = Date.now(); _saveTombs(); _pushDeletedDoc();
   await saveSetlists(); renderSetlists();
   showToastUndo('Сет-лист удалён',async()=>{
-    if(_lastDelSl){
-      delete _tombSetlists[_lastDelSl.id]; _saveTombs(); _pushDeletedDoc();
-      _lastDelSl.updatedAt = Date.now();
-      setlistsCache=[_lastDelSl,...setlistsCache];await saveSetlists();renderSetlists();_lastDelSl=null;
-    }
+    if(_lastDelSl){setlistsCache=[_lastDelSl,...setlistsCache];await saveSetlists();renderSetlists();_lastDelSl=null;}
   });
 }
 
@@ -4602,100 +4385,28 @@ function renderTagFilterBar() {
   bar.appendChild(clearBtn);
 }
 
-// ═══════════════════════════════════════════
-//  ОПРЕДЕЛЕНИЕ ТОНАЛЬНОСТИ — v2
-//  Гистограмма Крумхансл–Шмуклер (корреляция Пирсона вместо голого
-//  скалярного произведения) + структурные сигналы, которых не было:
-//  • первый и особенно последний аккорд песни — сильные маркеры тоники;
-//  • каденции V → I учитываются отдельным бонусом;
-//  • кандидат, чья тоника вообще не встречается среди аккордов, штрафуется
-//    (решает извечную путаницу относительных тональностей Am ↔ C);
-//  • sus/5-аккордам не приписывается несуществующая терция, dim получает
-//    правильную квинту, слэш-бас добавляется в профиль.
-// ═══════════════════════════════════════════
 function detectKeyFromLyrics(lyrics) {
-  if (!lyrics) return null;
-  const NT = ['C','C#','D','D#','E','F','F#','G','G#','A','A#','B'];
-  const F2S = { Db:'C#', Eb:'D#', Fb:'E', Gb:'F#', Ab:'G#', Bb:'A#', Cb:'B', H:'B' };
-
-  // Последовательность аккордов с разобранными признаками
-  const seq = [];
-  for (const m of lyrics.matchAll(/\[([^\]]+)\]/g)) {
-    const c = m[1].trim();
-    if (!CHORD_RE.test(c) || isBlockLabel(c)) continue;
-    const pm = c.match(/^([A-H][b#]?)([^/]*)(?:\/([A-H][b#]?))?$/);
-    if (!pm) continue;
-    const root = NT.indexOf(F2S[pm[1]] || pm[1]);
-    if (root < 0) continue;
-    const qual = pm[2] || '';
-    seq.push({
-      root,
-      isMin: /^m(?!aj)/.test(qual),
-      isDim: /dim/.test(qual),
-      isSus: /sus/.test(qual) || /^5$/.test(qual),
-      bass: pm[3] ? NT.indexOf(F2S[pm[3]] || pm[3]) : -1
-    });
+  if(!lyrics)return null;
+  const ch=[...lyrics.matchAll(/\[([^\]]+)\]/g)].map(m=>m[1].trim()).filter(c=>CHORD_RE.test(c)&&!isBlockLabel(c));
+  if(!ch.length)return null;
+  const nc=new Array(12).fill(0);
+  const NT=['C','C#','D','D#','E','F','F#','G','G#','A','A#','B'];
+  for(const c of ch){
+    const r=c.match(/^([A-H][b#]?)/)?.[1]; if(!r)continue;
+    const norm={Db:'C#',Eb:'D#',Fb:'E',Gb:'F#',Ab:'G#',Bb:'A#',Cb:'B',H:'B'}[r]||r;
+    const i=NT.indexOf(norm); if(i<0)continue;
+    const isM=/^[A-H][b#]?m(?!aj)/.test(c);
+    nc[i]+=3; nc[(i+(isM?3:4))%12]+=1; nc[(i+7)%12]+=2;
   }
-  if (!seq.length) return null;
-
-  // Взвешенный профиль высот: тон 4, квинта 1.5, терция 1.2 (если есть),
-  // слэш-бас 0.8; первый аккорд ×2.2, последний ×3 — маркеры тоники
-  const pc = new Array(12).fill(0);
-  const addChord = (ch, w) => {
-    pc[ch.root] += 4 * w;
-    if (!ch.isSus) pc[(ch.root + (ch.isMin || ch.isDim ? 3 : 4)) % 12] += 1.2 * w;
-    pc[(ch.root + (ch.isDim ? 6 : 7)) % 12] += 1.5 * w;
-    if (ch.bass >= 0) pc[ch.bass] += 0.8 * w;
-  };
-  seq.forEach((ch, i) => {
-    let w = 1;
-    if (i === 0) w += 1.2;
-    if (i === seq.length - 1) w += 2;
-    addChord(ch, w);
-  });
-
-  const MAJ = [6.35,2.23,3.48,2.33,4.38,4.09,2.52,5.19,2.39,3.66,2.29,2.88];
-  const MIN = [6.33,2.68,3.52,5.38,2.60,3.53,2.54,4.75,3.98,2.69,3.34,3.17];
-  function pearson(profile, rot) {
-    let sx = 0, sy = 0, sxx = 0, syy = 0, sxy = 0;
-    for (let i = 0; i < 12; i++) {
-      const x = pc[(rot + i) % 12], y = profile[i];
-      sx += x; sy += y; sxx += x * x; syy += y * y; sxy += x * y;
-    }
-    const num = 12 * sxy - sx * sy;
-    const den = Math.sqrt((12 * sxx - sx * sx) * (12 * syy - sy * sy));
-    return den ? num / den : 0;
+  const maj=[6.35,2.23,3.48,2.33,4.38,4.09,2.52,5.19,2.39,3.66,2.29,2.88];
+  const min=[6.33,2.68,3.52,5.38,2.60,3.53,2.54,4.75,3.98,2.69,3.34,3.17];
+  let bk=null,bs=-Infinity,bm=false;
+  for(let r=0;r<12;r++){
+    let ms=0,ns=0;
+    for(let i=0;i<12;i++){ms+=nc[(r+i)%12]*maj[i];ns+=nc[(r+i)%12]*min[i];}
+    if(ms>bs){bs=ms;bk=r;bm=false;} if(ns>bs){bs=ns;bk=r;bm=true;}
   }
-
-  // Структурные бонусы кандидата (root, minor)
-  const first = seq[0], last = seq[seq.length - 1];
-  const counts = {};
-  for (const ch of seq) { const k = ch.root + '|' + (ch.isMin ? 1 : 0); counts[k] = (counts[k] || 0) + 1; }
-  function bonus(root, minor) {
-    const tonicCount = counts[root + '|' + (minor ? 1 : 0)] || 0;
-    if (!tonicCount) return -0.35; // тоника ни разу не звучит — вряд ли это тональность
-    let b = Math.min(0.25, 0.03 * tonicCount);
-    const isTonic = ch => ch.root === root && ch.isMin === minor && !ch.isDim;
-    if (isTonic(last)) b += 0.30;   // песня закончилась на тонике
-    if (isTonic(first)) b += 0.15;  // и началась с неё
-    const dom = (root + 7) % 12;    // каденции V → I
-    let cad = 0;
-    for (let i = 0; i + 1 < seq.length; i++) {
-      const d = seq[i];
-      if (d.root === dom && !d.isDim && (!d.isMin || minor) && isTonic(seq[i + 1])) cad++;
-    }
-    b += Math.min(0.2, 0.05 * cad);
-    return b;
-  }
-
-  let best = null, bestScore = -Infinity;
-  for (let r = 0; r < 12; r++) {
-    const sMaj = pearson(MAJ, r) + bonus(r, false);
-    const sMin = pearson(MIN, r) + bonus(r, true);
-    if (sMaj > bestScore) { bestScore = sMaj; best = { root: r, minor: false }; }
-    if (sMin > bestScore) { bestScore = sMin; best = { root: r, minor: true }; }
-  }
-  return best ? NT[best.root] + (best.minor ? 'm' : '') : null;
+  return bk===null?null:['C','C#','D','D#','E','F','F#','G','G#','A','A#','B'][bk]+(bm?'m':'');
 }
 
 // ═══════════════════════════════════════════
@@ -5271,11 +4982,10 @@ function openSongPicker(slId) {
     pickerSelected.forEach(id => {
       if (!(cur.songs||[]).includes(id)) { cur.songs = cur.songs||[]; cur.songs.push(id); added++; }
     });
-    if (added) cur.updatedAt = Date.now();
     await saveSetlists();
     closeOverlay('overlay-song-picker');
     renderSetlistView(cur);
-    showToast(`Добавлено: ${added} ${plural(added,'песня','песни','песен')}`);
+    showToast(`Добавлено ${added} песен`);
   };
 }
 
@@ -5299,7 +5009,7 @@ function renderPickerList(filter) {
       <div class="picker-check">${sel?'✓':''}</div>
       <div style="flex:1;min-width:0">
         <div style="font-weight:700;font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escapeHtml(s.title)}</div>
-        <div style="font-size:12px;color:var(--muted)">${s.artist||''} · ${getDisplayKey(s, transposeMap[s.id] || 0)}</div>
+        <div style="font-size:12px;color:var(--muted)">${s.artist||''} ${s.key?'· '+s.key:''}</div>
       </div>
       ${already?'<span class="picker-already">уже в сете</span>':''}
     </div>`;
@@ -5312,7 +5022,7 @@ function renderPickerList(filter) {
       else { pickerSelected.add(id); item.classList.add('selected'); item.querySelector('.picker-check').textContent = '✓'; }
       const count = pickerSelected.size;
       document.getElementById('picker-confirm').textContent = count
-        ? `Добавить ${count} ${plural(count,'песню','песни','песен')}`
+        ? `Добавить ${count} песн${count===1?'ю':count<5?'и':'ей'}`
         : 'Добавить выбранные';
     });
   });
@@ -5321,9 +5031,10 @@ function renderPickerList(filter) {
 // ═══════════════════════════════════════════
 //  SETTINGS
 // ═══════════════════════════════════════════
-// Старый глобальный тумблер «диезы/бемоли» (cb_settings.notation) удалён —
-// он никогда ни на что не влиял. Реальная нотация — per-song (cb_notation_map),
-// переключается в меню «•••» песни.
+const SETTINGS_KEY = 'cb_settings';
+let appSettings = LS.get(SETTINGS_KEY, { notation:'sharp' });
+
+function saveSettings() { LS.set(SETTINGS_KEY, appSettings); }
 
 function updateSettingsUI() {
   const fl = document.getElementById('settings-font-label');
@@ -5339,15 +5050,29 @@ function updateSettingsUI() {
     btn.style.borderColor = active ? 'rgba(183,148,255,0.6)' : '';
     btn.style.color = active ? 'var(--primary)' : '';
   });
+  document.querySelectorAll('.settings-notation-btn').forEach(btn => {
+    const active = btn.dataset.notation === appSettings.notation;
+    btn.style.borderColor = active ? 'rgba(183,148,255,0.6)' : '';
+    btn.style.color = active ? 'var(--primary)' : '';
+  });
   document.querySelectorAll('.settings-density-btn').forEach(btn => {
     const active = btn.dataset.density === densityMode;
     btn.style.borderColor = active ? 'rgba(183,148,255,0.6)' : '';
     btn.style.color = active ? 'var(--primary)' : '';
   });
+  const gkInput = document.getElementById('settings-gemini-key');
+  if (gkInput && document.activeElement !== gkInput) gkInput.value = getGeminiKey();
 }
 document.querySelectorAll('.settings-density-btn').forEach(btn => {
   btn.addEventListener('click', () => { densityMode = btn.dataset.density; LS.set(DENSITY_KEY, densityMode); applyDensityMode(); updateSettingsUI(); });
 });
+(function(){
+  const gkInput = document.getElementById('settings-gemini-key');
+  if (gkInput) {
+    gkInput.addEventListener('change', () => saveGeminiKey(gkInput.value));
+    gkInput.addEventListener('blur', () => saveGeminiKey(gkInput.value));
+  }
+})();
 
 document.getElementById('settings-nav-btn').addEventListener('click', () => { updateSettingsUI(); openOverlay('overlay-settings'); });
 
@@ -5487,6 +5212,8 @@ async function checkPendingSongFromBot() {
   await checkPendingSongFromBot();
   setTimeout(updateHeaderHeight, 100);
   setTimeout(updateHeaderHeight, 600);
+  if ('serviceWorker' in navigator) navigator.serviceWorker.getRegistrations().then(regs => regs.forEach(r => r.unregister()));
+  if ('caches' in window) caches.keys().then(keys => keys.forEach(k => caches.delete(k)));
 })();
 
 document.getElementById('save-sl-btn').addEventListener('click', async () => {
@@ -5494,7 +5221,7 @@ document.getElementById('save-sl-btn').addEventListener('click', async () => {
   const name=document.getElementById('edit-sl-name').value.trim();
   if(!name){showToast('Введите название');return;}
   const date=document.getElementById('edit-sl-date').value;
-  setlistsCache=setlistsCache.map(s=>s.id===id?{...s,name,date,updatedAt:Date.now()}:s);
+  setlistsCache=setlistsCache.map(s=>s.id===id?{...s,name,date}:s);
   await saveSetlists(); closeOverlay('overlay-edit-setlist'); showToast('Сохранено');
   if(currentPage==='setlists')renderSetlists();
   if(currentPage==='setlist-view'&&currentSetlistId===id)
@@ -5541,30 +5268,33 @@ document.getElementById('delete-sl-btn').addEventListener('click', async () => {
       <button class="settings-view-btn ctrl-btn" data-mode="chords" style="flex:1;height:40px;justify-content:center;font-size:12px" aria-label="Только аккорды">♪ Аккорды</button>
     </div>
     <div class="section-header">Отображение тональности</div>
-    <div class="hint-box" style="margin-bottom:18px">
-      ♯ Диезы / ♭ Бемоли настраиваются <strong>для каждой песни отдельно</strong> — в просмотре песни откройте меню «•••».
+    <div style="display:flex;gap:10px;margin-bottom:18px">
+      <button class="settings-notation-btn ctrl-btn" data-notation="sharp" style="flex:1;height:40px;justify-content:center;font-size:13px" aria-label="Диезы">♯ Диезы</button>
+      <button class="settings-notation-btn ctrl-btn" data-notation="flat" style="flex:1;height:40px;justify-content:center;font-size:13px" aria-label="Бемоли">♭ Бемоли</button>
     </div>
     <div class="section-header">Плотность</div>
     <div style="display:flex;gap:10px;margin-bottom:18px">
       <button class="settings-density-btn ctrl-btn" data-density="normal" style="flex:1;height:40px;justify-content:center;font-size:13px" aria-label="Обычная плотность">Обычная</button>
       <button class="settings-density-btn ctrl-btn" data-density="compact" style="flex:1;height:40px;justify-content:center;font-size:13px" aria-label="Компактная плотность">Компактная</button>
     </div>
+    <div class="section-header">🤖 Gemini AI</div>
+    <div style="margin-bottom:18px">
+      <input type="password" id="settings-gemini-key" placeholder="Вставьте API-ключ Gemini" style="width:100%;box-sizing:border-box;padding:10px 12px;border-radius:10px;border:1px solid var(--glass-border);background:var(--bg2);color:var(--text);font-size:13px;font-family:Manrope,sans-serif;margin-bottom:6px" aria-label="API-ключ Gemini">
+      <div style="font-size:11px;color:var(--muted)">Нужен для кнопки «✨ Улучшить аккорды (AI)» в меню песни — она поправляет группировку квадратов в режиме «Аккорды». Ключ хранится только в этом браузере. Бесплатный ключ: <a href="https://aistudio.google.com/apikey" target="_blank" style="color:var(--accent2)">aistudio.google.com/apikey</a></div>
+    </div>
     <div class="section-header">Безопасность</div>
     <div class="hint-box" style="margin-bottom:8px;font-size:11px">
-      <strong>🔐 Firebase Security Rules</strong><br>
-      Приложение уже умеет анонимную авторизацию. Чтобы закрыть базу от посторонних:<br>
-      1. Firebase Console → Authentication → включить <strong>Anonymous</strong><br>
-      2. Перевести бота на service account (см. BOT_SYNC_NOTES.md)<br>
-      3. Правила:<br>
+      <strong>⚠️ Firebase Security Rules</strong><br>
+      Для работы интеграции с ботом нужны открытые правила:<br>
       <code style="font-size:10px;color:var(--accent2)">rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
     match /{document=**} {
-      allow read, write, delete: if request.auth != null;
+      allow read, write, delete: if true;
     }
   }
 }</code><br>
-      Пока правила открыты — всё работает как раньше.
+      Без этого база открыта для всех.
     </div>
   </div>
 </div>
@@ -5611,6 +5341,9 @@ document.querySelectorAll('.settings-view-btn').forEach(btn => {
     applyGlobalViewMode(); updateSettingsUI();
     showToast(GLOBAL_VIEW_TITLES[globalViewMode]);
   });
+});
+document.querySelectorAll('.settings-notation-btn').forEach(btn => {
+  btn.addEventListener('click', () => { appSettings.notation = btn.dataset.notation; saveSettings(); updateSettingsUI(); });
 });
 
 // ═══════════════════════════════════════════════════════════
@@ -5739,14 +5472,12 @@ async function saveInlineEdit(song) {
 //  сжатия повторов, для надёжной привязки
 //  DOM-строка → индекс строки в данных
 // ════════════════════════════════════
-// Тоника ОРИГИНАЛЬНОЙ тональности песни — без транспонирования.
-// Редактор работает с нетранспонированными данными (parseSong(lyrics, 0)),
-// поэтому и новый аккорд-заготовка должен быть в оригинальной тональности.
-// Раньше сюда подставлялась транспонированная тоника, и при активной
-// транспозиции новый аккорд оказывался «сдвинут дважды» после сохранения.
+// Тоника текущей (видимой) тональности песни — с учётом транспонирования.
+// Используется как разумное значение по умолчанию для новых аккордов,
+// чтобы пользователю не приходилось гадать, что вписывать вместо плейсхолдера.
 function _ieCurrentTonic() {
   if (!_inlineEditSong) return 'C';
-  return getDetectedKey(_inlineEditSong);
+  return transposeKey(getDetectedKey(_inlineEditSong), transposeOffset, getSongNotation(_inlineEditSong.id));
 }
 
 // ════════════════════════════════════
@@ -5781,7 +5512,15 @@ function _ieFlattenSquaresToRows(squares) {
       for (let k = 0; k < (sq.multiplier || 1); k++) sq.items.forEach(pushSquare);
       return;
     }
+    if (sq.type === 'pair') {
+      for (let k = 0; k < (sq.multiplier || 1); k++) {
+        rows.push([...sq.chords]);
+        rows.push([...sq.chords2]);
+      }
+      return;
+    }
     for (let k = 0; k < (sq.multiplier || 1); k++) rows.push([...sq.chords]);
+    if (sq.passage) rows.push([...sq.chords, sq.passage]);
   }
   squares.forEach(pushSquare);
   return rows.length ? rows : [[]];
@@ -5809,7 +5548,6 @@ function _ieRenderChordsOnlyEditorBlock(b, bi) {
     return `<div class="co-editor-row" data-co-bi="${bi}" data-co-ri="${ri}">
       ${chordsHtml}
       <button class="co-editor-add-chord-btn" data-co-bi="${bi}" data-co-ri="${ri}" aria-label="Добавить аккорд в строку">＋</button>
-      <button class="co-editor-del-row-btn" data-co-bi="${bi}" data-co-ri="${ri}" aria-label="Удалить строку" title="Удалить строку">✕</button>
     </div>`;
   }).join('');
   const labelHtml = b.label
@@ -5838,10 +5576,10 @@ function _ieBindChordsOnlyEvents(inner, signal) {
       const bi = +el.dataset.coBi;
       const block = _ieBlocks[bi];
       if (!block) return;
-      showInputDialog({
-        title: 'Название блока', value: block.label, placeholder: 'Куплет, Припев…',
-        onOk: v => { block.label = v.trim(); _ieRedraw(_inlineEditSong); }
-      });
+      const newLabel = prompt('Название блока:', block.label);
+      if (newLabel === null) return;
+      block.label = newLabel.trim();
+      _ieRedraw(_inlineEditSong);
     }, { signal });
   });
 
@@ -5878,20 +5616,6 @@ function _ieBindChordsOnlyEvents(inner, signal) {
         const b = document.querySelector(`.chord-badge[data-co-bi="${bi}"][data-co-ri="${ri}"][data-co-ci="${newCi}"]`);
         if (b) _ieOpenChordsOnlyPopup(b);
       }, 60);
-    }, { signal });
-  });
-
-  // Кнопка "✕" — удалить строку аккордов целиком
-  inner.querySelectorAll('.co-editor-del-row-btn[data-co-bi]').forEach(btn => {
-    btn.addEventListener('click', e => {
-      e.stopPropagation();
-      const bi = +btn.dataset.coBi, ri = +btn.dataset.coRi;
-      const layout = _ieGetOrInitChordsLayout(bi);
-      if (!layout.rows[ri]) return;
-      layout.rows.splice(ri, 1);
-      if (!layout.rows.length) layout.rows.push([]);
-      if (navigator.vibrate) navigator.vibrate(8);
-      _ieRedraw(_inlineEditSong);
     }, { signal });
   });
 
@@ -6031,21 +5755,17 @@ function _ieEndChordsOnlyDrag(cx, cy) {
 
   const srcLayout = _ieChordsLayout[bi];
   srcLayout.rows[ri].splice(ci, 1);
-  const srcRowRemoved = !srcLayout.rows[ri].length && srcLayout.rows.length > 1;
-  if (srcRowRemoved) srcLayout.rows.splice(ri, 1);
+  if (!srcLayout.rows[ri].length && srcLayout.rows.length > 1) srcLayout.rows.splice(ri, 1);
 
   let { bi: tBi, ri: tRi, ci: tCi } = target;
-  const dstLayout = _ieGetOrInitChordsLayout(tBi);
-  if (tBi === bi) {
-    // Индексы цели были посчитаны ДО удаления исходного аккорда/строки —
-    // корректируем на сдвиг: строка выше удалена → tRi--, аккорд левее
-    // в той же строке удалён → tCi--.
-    if (srcRowRemoved && tRi > ri) tRi--;
-    if (!srcRowRemoved && tRi === ri && tCi > ci) tCi--;
-  }
-  tRi = Math.max(0, Math.min(tRi, dstLayout.rows.length - 1));
+  const dstLayout = _ieChordsLayout[tBi];
+  if (tBi===bi && tRi===ri && tCi>ci) tCi--;
+  // Если исходная строка была удалена целиком (стала пустой и не последней),
+  // а целевая строка находилась ниже неё в том же блоке — индекс строки
+  // сдвинулся; пересчитываем безопасный индекс через clamp по факту длины.
+  tRi = Math.min(tRi, Math.max(0, dstLayout.rows.length - (tBi===bi && tRi>=ri && srcLayout.rows.length < (dstLayout===srcLayout ? dstLayout.rows.length+1 : dstLayout.rows.length) ? 1 : 0)));
   if (!dstLayout.rows[tRi]) dstLayout.rows[tRi] = [];
-  dstLayout.rows[tRi].splice(Math.max(0, Math.min(tCi, dstLayout.rows[tRi].length)), 0, chord);
+  dstLayout.rows[tRi].splice(Math.max(0, tCi), 0, chord);
 
   _ieRedraw(_inlineEditSong);
 }
@@ -6064,11 +5784,10 @@ function _ieOpenChordsOnlyPopup(badge) {
   inp.value = _ieChordsLayout[bi]?.rows[ri]?.[ci] || '';
   const hintEl = document.getElementById('ie-cp-mirror-hint');
   if (hintEl) hintEl.style.display = 'none';
-  _cpBuildChips(); _cpSyncChips();
   const r = badge.getBoundingClientRect();
   let top = r.bottom+8, left = r.left;
-  if (top+340>window.innerHeight) top=r.top-348; // попап стал выше из-за чипов
-  if (left+300>window.innerWidth) left=window.innerWidth-308;
+  if (top+160>window.innerHeight) top=r.top-168;
+  if (left+192>window.innerWidth) left=window.innerWidth-200;
   popup.style.top=Math.max(8,top)+'px'; popup.style.left=Math.max(8,left)+'px';
   popup.classList.add('visible');
   setTimeout(()=>{ inp.focus(); inp.select(); }, 50);
@@ -6080,9 +5799,43 @@ function _ieOpenChordsOnlyPopup(badge) {
   }, 300);
 }
 
-// _ieFlatPositions / _ieSquareSpan удалены — мёртвый код старой архитектуры
-// редактора (реконструкция позиций через optimizeBlock больше не нужна:
-// изолированный редактор «Аккорды» работает с плоской моделью напрямую).
+// ════════════════════════════════════
+//  COMPRESSED (chords-only-like) RENDER
+//  для режима "Аккорды" внутри редактора.
+//  optimizeBlock не модифицируется — вместо
+//  этого параллельно восстанавливаем, какому
+//  диапазону исходных (li,ci)-позиций
+//  соответствует каждый визуальный square.
+// ════════════════════════════════════
+
+// Плоский список позиций (li,ci) блока в исходном, несжатом порядке —
+// ровно в том порядке, в котором optimizeBlock потребляет аккорды.
+function _ieFlatPositions(block) {
+  const flat = [];
+  block.lines.forEach((line, li) => {
+    line.chords.forEach((ch, ci) => flat.push({ li, ci }));
+  });
+  return flat;
+}
+
+// Сколько исходных позиций "съедает" один square (с учётом multiplier —
+// каждый повтор паттерна — это отдельная группа исходных позиций).
+function _ieSquareSpan(sq) {
+  if (sq.type === 'group') {
+    const inner = sq.items.reduce((sum, it) => sum + _ieSquareSpan(it), 0);
+    return inner * (sq.multiplier || 1);
+  }
+  if (sq.type === 'pair') {
+    return (sq.chords.length + sq.chords2.length) * (sq.multiplier || 1);
+  }
+  // passage square визуально показывает базу один раз + индикатор лишнего
+  // аккорда, но РЕАЛЬНО представляет ДВЕ исходные строки: базовую
+  // (chords.length позиций) и следующую — та же база + 1 лишний аккорд
+  // (chords.length+1 позиций). Итого chords.length*2+1, не chords.length+1.
+  // optimizeBlock всегда ставит multiplier:1 вместе с passage (несовместимы).
+  if (sq.passage) return sq.chords.length * 2 + 1;
+  return sq.chords.length * (sq.multiplier || 1);
+}
 
 function _ieRenderBlockEditable(b, bi) {
   const color = getBlockColor(b.label, bi);
@@ -6338,54 +6091,8 @@ function _ieRemoveInsertCursors() {
 }
 
 // ════════════════════════════════════
-//  CHORD POPUP — быстрый выбор аккорда чипами
-//  (нота + тип), ручной ввод в поле остаётся
+//  CHORD POPUP
 // ════════════════════════════════════
-const CP_ROOTS = ['C','C#','D','D#','E','F','F#','G','G#','A','A#','B'];
-const CP_QUALS = [['','maj'],['m','m'],['7','7'],['m7','m7'],['maj7','maj7'],['sus4','sus4'],['sus2','sus2'],['add9','add9'],['dim','dim']];
-
-function _cpParse(v) {
-  const m = String(v || '').trim().match(/^([A-H][b#]?)([^/]*)(\/.*)?$/);
-  if (!m) return { root: '', qual: '', bass: '' };
-  return { root: normalizeNote(m[1]), qual: m[2] || '', bass: m[3] || '' };
-}
-
-function _cpSyncChips() {
-  const inp = document.getElementById('ie-cp-input');
-  const p = _cpParse(inp.value);
-  document.querySelectorAll('#ie-cp-roots .cp-chip').forEach(b => b.classList.toggle('active', b.dataset.root === p.root));
-  document.querySelectorAll('#ie-cp-quals .cp-chip').forEach(b => b.classList.toggle('active', b.dataset.qual === p.qual));
-}
-
-function _cpBuildChips() {
-  const rootsEl = document.getElementById('ie-cp-roots');
-  const qualsEl = document.getElementById('ie-cp-quals');
-  if (!rootsEl || rootsEl.dataset.built) return;
-  rootsEl.dataset.built = '1';
-  rootsEl.innerHTML = CP_ROOTS.map(r => `<button type="button" class="cp-chip" data-root="${r}">${r}</button>`).join('');
-  qualsEl.innerHTML = CP_QUALS.map(([q, l]) => `<button type="button" class="cp-chip" data-qual="${q}">${l}</button>`).join('');
-  const inp = document.getElementById('ie-cp-input');
-  rootsEl.addEventListener('click', e => {
-    const b = e.target.closest('[data-root]');
-    if (!b) return;
-    const p = _cpParse(inp.value);
-    inp.value = b.dataset.root + p.qual + p.bass;
-    _cpSyncChips();
-    if (navigator.vibrate) navigator.vibrate(6);
-  });
-  qualsEl.addEventListener('click', e => {
-    const b = e.target.closest('[data-qual]');
-    if (!b) return;
-    const p = _cpParse(inp.value);
-    const root = p.root || 'C';
-    const q = b.dataset.qual;
-    inp.value = root + (p.qual === q ? '' : q) + p.bass; // повторный тап по типу снимает его
-    _cpSyncChips();
-    if (navigator.vibrate) navigator.vibrate(6);
-  });
-  inp.addEventListener('input', _cpSyncChips);
-}
-
 let _ieOutsideHandler = null;
 
 function _ieOpenChordPopup(badge) {
@@ -6397,11 +6104,10 @@ function _ieOpenChordPopup(badge) {
   inp.value = _ieBlocks[bi]?.lines[li]?.chords[ci] || '';
   const hintEl = document.getElementById('ie-cp-mirror-hint');
   if (hintEl) hintEl.style.display = 'none';
-  _cpBuildChips(); _cpSyncChips();
   const r = badge.getBoundingClientRect();
   let top = r.bottom+8, left = r.left;
-  if (top+340>window.innerHeight) top=r.top-348; // попап стал выше из-за чипов
-  if (left+300>window.innerWidth) left=window.innerWidth-308;
+  if (top+160>window.innerHeight) top=r.top-168;
+  if (left+192>window.innerWidth) left=window.innerWidth-200;
   popup.style.top=Math.max(8,top)+'px'; popup.style.left=Math.max(8,left)+'px';
   popup.classList.add('visible');
   setTimeout(()=>{ inp.focus(); inp.select(); }, 50);
@@ -6497,12 +6203,12 @@ function _ieLinePopupEditText() {
   const { bi, li } = _ieLinePopupCtx;
   const block = _ieBlocks[bi];
   if (!block || !block.lines[li]) return;
+  const newText = prompt('Текст строки:', block.lines[li].lyric || '');
+  if (newText === null) return;
+  block.lines[li].lyric = newText.trim();
   _ieLinePopupCtx = null;
   _ieHidePopups();
-  showInputDialog({
-    title: 'Текст строки', value: block.lines[li].lyric || '', placeholder: 'Слова этой строки',
-    onOk: v => { block.lines[li].lyric = v.trim(); _ieRedraw(_inlineEditSong); }
-  });
+  _ieRedraw(_inlineEditSong);
 }
 
 function _ieLinePopupDelete() {
@@ -6559,10 +6265,10 @@ function _ieEditLabel(el) {
   const bi = +el.dataset.bi;
   const block = _ieBlocks[bi];
   if (!block) return;
-  showInputDialog({
-    title: 'Название блока', value: block.label, placeholder: 'Куплет, Припев…',
-    onOk: v => { block.label = v.trim(); _ieRedraw(_inlineEditSong); }
-  });
+  const newLabel = prompt('Название блока:', block.label);
+  if (newLabel===null) return;
+  block.label = newLabel.trim();
+  _ieRedraw(_inlineEditSong);
 }
 
 // ════════════════════════════════════
@@ -6761,8 +6467,16 @@ document.getElementById('tuner-mode-btn') && document.getElementById('tuner-mode
 // ═══════════════════════════════════════════
 //  PRINT / PDF
 // ═══════════════════════════════════════════
-// Общие стили печати (одна песня и целый сет-лист)
-const PRINT_CSS = `
+function printSong(song) {
+  const savedTheme = LS.get('cb_theme') || 'dark';
+  applyTheme('print');
+  const content = renderSongContent(song, transposeOffset);
+  const w = window.open('', '_blank', 'width=800,height=600');
+  if (!w) { showToast('Разрешите всплывающие окна'); applyTheme(savedTheme); return; }
+  w.document.write(`<!DOCTYPE html>
+<html lang="ru"><head><meta charset="UTF-8">
+<title>${escapeHtml(song.title)}</title>
+<style>
   body{font-family:-apple-system,'Helvetica Neue',Arial,sans-serif;padding:24px;color:#111;background:#fff}
   h1{font-size:20px;font-weight:800;margin:0 0 4px}
   .meta{font-size:13px;color:#666;margin-bottom:16px}
@@ -6773,31 +6487,15 @@ const PRINT_CSS = `
   .lyric-line{font-family:'Courier New',monospace;font-size:12px;color:#444;margin-bottom:2px;white-space:pre-wrap}
   .chord-row{margin-bottom:2px}
   .chords-only-block{display:none}
-  .song-two-col{display:block}
-  @media print{body{padding:12px}h1{font-size:17px}.chord-badge{font-size:13px}}`;
-
-function _openPrintWindow(title, bodyHtml, savedTheme) {
-  const w = window.open('', '_blank', 'width=800,height=600');
-  if (!w) { showToast('Разрешите всплывающие окна'); applyTheme(savedTheme); return; }
-  w.document.write(`<!DOCTYPE html>
-<html lang="ru"><head><meta charset="UTF-8">
-<title>${escapeHtml(title)}</title>
-<style>${PRINT_CSS}</style></head><body>
-${bodyHtml}
+  @media print{body{padding:12px}h1{font-size:17px}.chord-badge{font-size:13px}}
+</style></head><body>
+<h1>${escapeHtml(song.title)}</h1>
+<div class="meta">${song.artist ? escapeHtml(song.artist) + ' · ' : ''}${song.key || ''}${song.bpm ? ' · ' + song.bpm + ' BPM' : ''}</div>
+${content}
 <script>window.onload=()=>{window.print();}<\/script>
 </body></html>`);
   w.document.close();
   applyTheme(savedTheme);
-}
-
-function printSong(song) {
-  const savedTheme = LS.get('cb_theme') || 'dark';
-  applyTheme('print');
-  const off = currentSongId === song.id ? transposeOffset : (transposeMap[song.id] || 0);
-  const body = `<h1>${escapeHtml(song.title)}</h1>
-<div class="meta">${song.artist ? escapeHtml(song.artist) + ' · ' : ''}${getDisplayKey(song, off)}${song.bpm ? ' · ' + song.bpm + ' BPM' : ''}</div>
-${renderSongContent(song, off)}`;
-  _openPrintWindow(song.title, body, savedTheme);
 }
 
 // ═══════════════════════════════════════════
