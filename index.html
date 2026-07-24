@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
-<meta http-equiv="Content-Security-Policy" content="default-src 'self' https://telegram.org https://firestore.googleapis.com https://fonts.googleapis.com https://fonts.gstatic.com; script-src 'self' 'unsafe-inline' https://telegram.org; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; connect-src https://firestore.googleapis.com https://chordbook-improve.elapsov57.workers.dev; media-src 'self'; img-src 'self' data:; worker-src 'none'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self' https://telegram.org https://firestore.googleapis.com https://fonts.googleapis.com https://fonts.gstatic.com; script-src 'self' 'unsafe-inline' https://telegram.org; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; connect-src https://firestore.googleapis.com https://YOUR-WORKER-SUBDOMAIN.workers.dev; media-src 'self'; img-src 'self' data:; worker-src 'none'">
 <title>ChordBook</title>
 <script>
 (function() {
@@ -2676,7 +2676,7 @@ function getManualChordsLayout(song, bi) {
 //  поэтому дальше используется штатный getManualChordsLayout()/
 //  manualLayoutToHtml() без каких-либо изменений в рендере.
 // ═══════════════════════════════════════════
-const IMPROVE_CHORDS_URL = 'https:///chordbook-improve.elapsov57.workers.dev';
+const IMPROVE_CHORDS_URL = 'https://YOUR-WORKER-SUBDOMAIN.workers.dev';
 
 function extractLineChords(line) {
   const chords = [];
@@ -2720,19 +2720,62 @@ async function callGeminiChordsLayout(song) {
   return parsed.blocks;
 }
 
+// Схлопывает подряд идущие ОДИНАКОВЫЕ строки в одну с полем mult[i] —
+// без этого Gemini честно возвращает каждый повтор отдельной строкой
+// (["A"],["A"],["A"]), и на экране это выглядело бы как 3 отдельных
+// квадрата вместо одного "A ×3", то есть хуже, чем было до AI-кнопки.
+function collapseRepeatedRows(rows) {
+  const outRows = [];
+  const outMult = [];
+  let i = 0;
+  while (i < rows.length) {
+    const cur = rows[i];
+    let mul = 1;
+    while (i + mul < rows.length && JSON.stringify(rows[i + mul]) === JSON.stringify(cur)) mul++;
+    outRows.push(cur);
+    outMult.push(mul);
+    i += mul;
+  }
+  return { rows: outRows, mult: outMult };
+}
+
 async function improveChordsWithGemini(song) {
   const blocksResult = await callGeminiChordsLayout(song);
+  // Снимок раскладки ДО перезаписи — хранится в самой песне, чтобы можно
+  // было откатить AI-улучшение позже (даже после перезагрузки приложения),
+  // пока не будет запущено новое AI-улучшение или ручное редактирование.
+  const prevLayout = song.chordsOnlyLayout ? JSON.parse(JSON.stringify(song.chordsOnlyLayout)) : null;
   const layout = song.chordsOnlyLayout ? Object.assign({}, song.chordsOnlyLayout) : {};
   let changed = 0;
   blocksResult.forEach(b => {
     if (typeof b.index !== 'number' || !Array.isArray(b.rows) || !b.rows.length) return;
-    layout[b.index] = { rows: b.rows };
+    layout[b.index] = collapseRepeatedRows(b.rows);
     changed++;
   });
   if (!changed) throw new Error('Не вернулось ни одной группировки');
   song.chordsOnlyLayout = layout;
+  song._aiChordsBackup = prevLayout;
   const idx = songsCache.findIndex(s => s.id === song.id);
-  if (idx !== -1) songsCache[idx].chordsOnlyLayout = layout;
+  if (idx !== -1) { songsCache[idx].chordsOnlyLayout = layout; songsCache[idx]._aiChordsBackup = prevLayout; }
+  await saveSingleSong(song);
+  invalidateSongCache(song.id);
+}
+
+// Откатывает последнее AI-улучшение схлопывания для песни — восстанавливает
+// раскладку, которая была до него (или полностью убирает ручную раскладку,
+// если до AI её не было и блоки рендерились через optimizeBlock).
+async function revertAiChords(song) {
+  if (typeof song._aiChordsBackup === 'undefined') throw new Error('Нечего откатывать');
+  const prevLayout = song._aiChordsBackup;
+  if (prevLayout) song.chordsOnlyLayout = prevLayout;
+  else delete song.chordsOnlyLayout;
+  delete song._aiChordsBackup;
+  const idx = songsCache.findIndex(s => s.id === song.id);
+  if (idx !== -1) {
+    if (prevLayout) songsCache[idx].chordsOnlyLayout = prevLayout;
+    else delete songsCache[idx].chordsOnlyLayout;
+    delete songsCache[idx]._aiChordsBackup;
+  }
   await saveSingleSong(song);
   invalidateSongCache(song.id);
 }
@@ -2802,14 +2845,20 @@ function renderChords(blocks, song) {
   }
 
   // Ручная раскладка рендерится напрямую построчно — без optimizeBlock,
-  // без ×N, без pair-склейки: это именно то, что пользователь сам
-  // разложил руками в изолированном редакторе, автоматика здесь больше
-  // не участвует ни в группировке, ни в дедупликации строк.
+  // без pair-склейки: это именно то, что пользователь сам разложил руками
+  // в изолированном редакторе (или что вернул AI), автоматика здесь не
+  // участвует ни в группировке, ни в дедупликации строк. Единственное
+  // исключение — необязательное поле layout.mult[i]: если оно есть и >1,
+  // рисуем бейдж ×N (его проставляет постобработка ответа Gemini для
+  // подряд идущих одинаковых строк; обычный ручной редактор это поле
+  // не создаёт и потому не затрагивается).
   function manualLayoutToHtml(layout) {
-    return layout.rows.map(row => {
+    return layout.rows.map((row, i) => {
       if (!row.length) return '';
       const chordsHtml = row.map(c => '<span class="chord-badge">'+escapeHtml(c)+'</span>').join('');
-      return '<div class="chords-only-row" style="margin-bottom:6px;align-items:center;flex-wrap:wrap;">'+chordsHtml+'</div>';
+      const mulN = layout.mult && layout.mult[i] > 1 ? layout.mult[i] : 0;
+      const multHtml = mulN > 1 ? '<span class="repeat-badge repeat-inline">\xd7'+mulN+'</span>' : '';
+      return '<div class="chords-only-row" style="margin-bottom:6px;align-items:center;flex-wrap:wrap;">'+chordsHtml+multHtml+'</div>';
     }).join('');
   }
 
@@ -4202,10 +4251,12 @@ function showSongOverflowMenu(song, btnEl) {
   m.style.cssText='top:'+(r.bottom+6)+'px;right:'+(window.innerWidth-r.right)+'px';
   const _curNotation = getSongNotation(song.id);
   const _notationLabel = _curNotation === 'flat' ? '♯ Показывать диезы' : '♭ Показывать бемоли';
+  const _hasAiBackup = typeof song._aiChordsBackup !== 'undefined';
   m.innerHTML='<div class="overflow-menu-item" id="om-sl">📋 Добавить в сет-лист</div>'
     +'<div class="overflow-menu-item" id="om-si">🎤 Выбрать солиста</div>'
     +'<div class="overflow-menu-item" id="om-nt">'+_notationLabel+'</div>'
     +'<div class="overflow-menu-item" id="om-ai">✨ Улучшить аккорды (AI)</div>'
+    +(_hasAiBackup ? '<div class="overflow-menu-item" id="om-ai-undo">↩️ Откатить AI-улучшение</div>' : '')
     +'<div class="overflow-menu-item" id="om-ed">✏️ Редактировать</div>'
     +'<div class="overflow-menu-item" id="om-pr">🖨 Распечатать / PDF</div>'
     +'<div class="overflow-menu-item" id="om-sy">📡 Синхронизировать тональности</div>';
@@ -4242,6 +4293,25 @@ function showSongOverflowMenu(song, btnEl) {
       close();
     }
   });
+  if (_hasAiBackup) {
+    document.getElementById('om-ai-undo').addEventListener('click', async e => {
+      e.stopPropagation();
+      const item = document.getElementById('om-ai-undo');
+      item.textContent = '⏳ Откатываем...';
+      item.style.pointerEvents = 'none';
+      item.style.opacity = '0.6';
+      try {
+        await revertAiChords(song);
+        renderSongView(song);
+        showToast('↩️ AI-улучшение откачено');
+      } catch (err) {
+        console.error('Revert AI chords error:', err);
+        showToast('Не удалось откатить: ' + (err && err.message ? err.message : 'ошибка'));
+      } finally {
+        close();
+      }
+    });
+  }
   document.getElementById('om-ed').addEventListener('click',()=>{close();openEditSong(currentSongId);});
   document.getElementById('om-pr').addEventListener('click',()=>{close();printSong(song);});
   document.getElementById('om-sy').addEventListener('click', e => {
