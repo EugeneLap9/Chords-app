@@ -39,6 +39,12 @@
   //  ручным редактором (см. Планирование/…TDD-переписывание режима
   //  Аккорды в Obsidian).
   // ═══════════════════════════════════════════
+  function _chunksEqual(a, b) {
+    if (a.length !== b.length) return false;
+    for (let i = 0; i < a.length; i++) if (!eq(a[i], b[i])) return false;
+    return true;
+  }
+
   function autoGroupBlock(lines) {
     const chordLines = (lines || [])
       .map(extractLineChords)
@@ -46,42 +52,49 @@
 
     if (!chordLines.length) return [];
 
-    // Ищем наименьшую длину паттерна L (>=1), для которой блок начинается
-    // с >=2 точных повторов подряд. Первая подходящая L побеждает —
-    // предсказуемо и просто для человека (не пытаемся угадать "лучшую"
-    // из нескольких математически валидных интерпретаций).
+    // ПРАВИЛО: квадрат — это музыкальная фраза, а не обязательно ровно
+    // одна исходная строка, и рендерится ВСЕГДА одной строкой (см.
+    // требование "квадрат на одной строке"). Длина фразы L — ОДНА на
+    // весь блок, а не подбирается заново в каждой точке: сначала ищем
+    // наименьшую L (1, 2, 3…), при которой блок, поделённый на куски
+    // по L строк НАЧИНАЯ С ПЕРВОЙ строки, даёт хотя бы одно совпадение
+    // двух соседних кусков — это и есть длина повторяющейся фразы
+    // (напр. «Куплет 1»/«Куплет 2» песни «Славь» — фраза из 2 строк
+    // A-D-A / E-D-A). Дальше ВЕСЬ блок режется по этой длине от начала
+    // — включая непериодический хвост/префикс, которые тоже становятся
+    // одним рядом-квадратом (просто с multiplier:1, без бейджа), а не
+    // остаются раздельными строками. Если ни для одной L совпадений не
+    // нашлось — L=1 (старое поведение: 1 строка = 1 квадрат).
     const maxL = Math.floor(chordLines.length / 2);
-    for (let L = 1; L <= maxL; L++) {
-      const pattern = chordLines.slice(0, L);
-      let reps = 0;
-      while ((reps + 1) * L <= chordLines.length) {
-        const start = reps * L;
-        let matches = true;
-        for (let j = 0; j < L; j++) {
-          if (!eq(chordLines[start + j], pattern[j])) { matches = false; break; }
+    let bestL = 1;
+    outer: for (let L = 1; L <= maxL; L++) {
+      const chunks = [];
+      for (let i = 0; i < chordLines.length; i += L) chunks.push(chordLines.slice(i, i + L));
+      for (let c = 0; c < chunks.length - 1; c++) {
+        if (chunks[c].length === L && chunks[c + 1].length === L && _chunksEqual(chunks[c], chunks[c + 1])) {
+          bestL = L;
+          break outer;
         }
-        if (!matches) break;
-        reps++;
-      }
-      if (reps >= 2) {
-        const consumed = reps * L;
-        const tailLines = (lines || []).filter(l => extractLineChords(l).length > 0).slice(consumed);
-        const tailResult = tailLines.length ? autoGroupBlock(tailLines) : [];
-
-        if (L === 1) {
-          return [{ type: 'single', chords: pattern[0], multiplier: reps }, ...tailResult];
-        }
-        return [{
-          type: 'group',
-          items: pattern.map(chords => ({ type: 'single', chords, multiplier: 1 })),
-          multiplier: reps
-        }, ...tailResult];
       }
     }
 
-    // Ни один периодический паттерн не найден с начала — каждая строка
-    // становится собственным square, порядок сохранён, без слияния.
-    return chordLines.map(chords => ({ type: 'single', chords, multiplier: 1 }));
+    const chunks = [];
+    for (let i = 0; i < chordLines.length; i += bestL) chunks.push(chordLines.slice(i, i + bestL));
+
+    const squares = [];
+    let i = 0;
+    while (i < chunks.length) {
+      const cur = chunks[i];
+      let mult = 1;
+      while (i + mult < chunks.length && _chunksEqual(chunks[i + mult], cur)) mult++;
+      // Схлопываем несколько исходных строк фразы в ОДНУ строку квадрата —
+      // именно это и значит "квадрат на одной строке".
+      const flatChords = cur.reduce(function (acc, row) { return acc.concat(row); }, []);
+      squares.push({ type: 'single', chords: flatChords, multiplier: mult });
+      i += mult;
+    }
+
+    return squares;
   }
 
   // ═══════════════════════════════════════════

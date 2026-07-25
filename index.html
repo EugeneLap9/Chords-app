@@ -1839,7 +1839,18 @@ function toFsValue(val) {
   if (typeof val === 'boolean') return { booleanValue: val };
   if (typeof val === 'number') return Number.isInteger(val) ? { integerValue: String(val) } : { doubleValue: val };
   if (typeof val === 'string') return { stringValue: val };
-  if (Array.isArray(val)) return { arrayValue: { values: val.map(toFsValue) } };
+  if (Array.isArray(val)) {
+    // Firestore запрещает arrayValue НАПРЯМУЮ внутри другого arrayValue
+    // ("Nested arrays are not allowed", HTTP 400) — из-за этого
+    // song.chordsOnlyLayout[bi].rows (string[][], массив строк-аккордов)
+    // не мог сохраниться вообще НИКОГДА: PATCH молча падал, правки
+    // ручного/AI-редактора жили только в памяти вкладки до перезагрузки.
+    // Оборачиваем каждый вложенный массив в mapValue-метку __nestedArray —
+    // fromFsValue ниже её же и разворачивает обратно.
+    return { arrayValue: { values: val.map(function (item) {
+      return Array.isArray(item) ? { mapValue: { fields: { __nestedArray: toFsValue(item) } } } : toFsValue(item);
+    }) } };
+  }
   if (typeof val === 'object') { const fields = {}; for (const k of Object.keys(val)) fields[k] = toFsValue(val[k]); return { mapValue: { fields } }; }
   return { stringValue: String(val) };
 }
@@ -1850,7 +1861,12 @@ function fromFsValue(v) {
   if ('integerValue' in v) return Number(v.integerValue);
   if ('doubleValue' in v) return v.doubleValue;
   if ('stringValue' in v) return v.stringValue;
-  if ('arrayValue' in v) return (v.arrayValue.values || []).map(fromFsValue);
+  if ('arrayValue' in v) return (v.arrayValue.values || []).map(function (item) {
+    if (item && item.mapValue && item.mapValue.fields && Object.keys(item.mapValue.fields).length === 1 && '__nestedArray' in item.mapValue.fields) {
+      return fromFsValue(item.mapValue.fields.__nestedArray);
+    }
+    return fromFsValue(item);
+  });
   if ('mapValue' in v) { const obj = {}; for (const k of Object.keys(v.mapValue.fields || {})) obj[k] = fromFsValue(v.mapValue.fields[k]); return obj; }
   return null;
 }
@@ -5905,7 +5921,11 @@ function _iePopupSave() {
 function _iePopupDelete() {
   if (_ieCoPopupCtx) {
     const { bi, ri, ci } = _ieCoPopupCtx;
-    const layout = _ieChordsLayout[bi];
+    // Удаление — реальное редактирование, материализуем блок (как и в
+    // _iePopupSave выше) — раньше здесь читался "сырой" _ieChordsLayout[bi]
+    // напрямую, и на нетронутом блоке (undefined) удаление тихо не
+    // происходило: пользователь жал "Удалить", аккорд оставался на месте.
+    const layout = _ieMaterializeChordsLayout(bi);
     if (layout?.rows[ri]) {
       layout.rows[ri].splice(ci, 1);
       if (!layout.rows[ri].length && layout.rows.length > 1) layout.rows.splice(ri, 1);
