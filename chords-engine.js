@@ -39,9 +39,9 @@
   //  ручным редактором (см. Планирование/…TDD-переписывание режима
   //  Аккорды в Obsidian).
   // ═══════════════════════════════════════════
-  function _chunksEqual(a, b) {
+  function _arrEq(a, b) {
     if (a.length !== b.length) return false;
-    for (let i = 0; i < a.length; i++) if (!eq(a[i], b[i])) return false;
+    for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return false;
     return true;
   }
 
@@ -52,45 +52,66 @@
 
     if (!chordLines.length) return [];
 
-    // ПРАВИЛО: квадрат — это музыкальная фраза, а не обязательно ровно
-    // одна исходная строка, и рендерится ВСЕГДА одной строкой (см.
-    // требование "квадрат на одной строке"). Длина фразы L — ОДНА на
-    // весь блок, а не подбирается заново в каждой точке: сначала ищем
-    // наименьшую L (1, 2, 3…), при которой блок, поделённый на куски
-    // по L строк НАЧИНАЯ С ПЕРВОЙ строки, даёт хотя бы одно совпадение
-    // двух соседних кусков — это и есть длина повторяющейся фразы
-    // (напр. «Куплет 1»/«Куплет 2» песни «Славь» — фраза из 2 строк
-    // A-D-A / E-D-A). Дальше ВЕСЬ блок режется по этой длине от начала
-    // — включая непериодический хвост/префикс, которые тоже становятся
-    // одним рядом-квадратом (просто с multiplier:1, без бейджа), а не
-    // остаются раздельными строками. Если ни для одной L совпадений не
-    // нашлось — L=1 (старое поведение: 1 строка = 1 квадрат).
-    const maxL = Math.floor(chordLines.length / 2);
-    let bestL = 1;
-    outer: for (let L = 1; L <= maxL; L++) {
-      const chunks = [];
-      for (let i = 0; i < chordLines.length; i += L) chunks.push(chordLines.slice(i, i + L));
-      for (let c = 0; c < chunks.length - 1; c++) {
-        if (chunks[c].length === L && chunks[c + 1].length === L && _chunksEqual(chunks[c], chunks[c + 1])) {
-          bestL = L;
+    // ПРАВИЛО: квадрат — это музыкальная фраза (не обязательно 1
+    // исходная строка) и всегда рендерится ОДНОЙ строкой. Одна и та же
+    // фраза в тексте песни может быть записана то целиком в одной
+    // строке ([F#m][D][A][E]), то разбита на две половины ([F#m][D] +
+    // [A][E] — просто из-за переноса текста под слова), и это ДОЛЖНО
+    // распознаваться как одна и та же фраза. Поэтому ищем повтор не по
+    // ЧИСЛУ исходных строк, а по ПЛОСКОЙ последовательности аккордов
+    // всего блока — длина фразы измеряется в аккордах, а не в строках.
+    const flat = [];
+    const lineBoundaries = [];
+    chordLines.forEach(function (chords) {
+      flat.push.apply(flat, chords);
+      lineBoundaries.push(flat.length);
+    });
+    const boundarySet = {};
+    lineBoundaries.forEach(function (b) { boundarySet[b] = true; });
+
+    // U (в аккордах) допустима, только если КАЖДАЯ внутренняя граница
+    // куска совпадает с границей какой-то исходной строки — иначе кусок
+    // резал бы строку пополам, а строку резать нельзя никогда.
+    function isValidU(U) {
+      for (let pos = U; pos < flat.length; pos += U) {
+        if (!boundarySet[pos]) return false;
+      }
+      return true;
+    }
+
+    const maxU = Math.floor(flat.length / 2);
+    let bestU = 0; // 0 = повтор не найден ни для одной допустимой длины фразы
+    outer: for (let U = 1; U <= maxU; U++) {
+      if (!isValidU(U)) continue;
+      for (let pos = 0; pos + 2 * U <= flat.length; pos += U) {
+        if (_arrEq(flat.slice(pos, pos + U), flat.slice(pos + U, pos + 2 * U))) {
+          bestU = U;
           break outer;
         }
       }
     }
 
-    const chunks = [];
-    for (let i = 0; i < chordLines.length; i += bestL) chunks.push(chordLines.slice(i, i + bestL));
+    // Если повторяющаяся длина фразы найдена — режем ВЕСЬ блок на куски
+    // именно этой длины (включая непериодический хвост/префикс — он
+    // тоже становится одним рядом, просто без бейджа ×N). Если нет —
+    // возвращаемся к границам исходных строк как есть (старое поведение
+    // "1 строка = 1 квадрат", напр. «Пред припев» E/D — они разной
+    // длины и никогда не складываются в общую фразу).
+    let chunks;
+    if (bestU > 0) {
+      chunks = [];
+      for (let pos = 0; pos < flat.length; pos += bestU) chunks.push(flat.slice(pos, pos + bestU));
+    } else {
+      chunks = chordLines;
+    }
 
     const squares = [];
     let i = 0;
     while (i < chunks.length) {
       const cur = chunks[i];
       let mult = 1;
-      while (i + mult < chunks.length && _chunksEqual(chunks[i + mult], cur)) mult++;
-      // Схлопываем несколько исходных строк фразы в ОДНУ строку квадрата —
-      // именно это и значит "квадрат на одной строке".
-      const flatChords = cur.reduce(function (acc, row) { return acc.concat(row); }, []);
-      squares.push({ type: 'single', chords: flatChords, multiplier: mult });
+      while (i + mult < chunks.length && _arrEq(chunks[i + mult], cur)) mult++;
+      squares.push({ type: 'single', chords: cur.slice(), multiplier: mult });
       i += mult;
     }
 
