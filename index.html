@@ -1666,6 +1666,7 @@ F# C#m E H
   </div>
 </div>
 
+<script src="chords-engine.js"></script>
 <script>
 'use strict';
 
@@ -2452,206 +2453,12 @@ function renderMixed(blocks) {
 // ═══════════════════════════════════════════
 //  OPTIMIZE BLOCK (chords-only mode)
 // ═══════════════════════════════════════════
-function optimizeBlock(blockLines) {
-  function eq(a, b) { return JSON.stringify(a) === JSON.stringify(b); }
-  function isPassage(base, target) {
-    if (target.length !== base.length + 1) return false;
-    return base.every((v, j) => v === target[j]);
-  }
-  function findPattern(arr, minRepeats = 2) {
-    const startL = minRepeats === 1 ? 1 : 2;
-    const maxWithTail = arr.length - 1;
-    for (let L = startL; L <= Math.min(maxWithTail, 8); L++) {
-      const pattern = arr.slice(0, L);
-      const exactCount = arr.length / L;
-      if (Number.isInteger(exactCount) && exactCount >= minRepeats && exactCount >= 2) {
-        let ok = true;
-        for (let i = L; i < arr.length; i++) { if (!eq(arr[i], pattern[i % L])) { ok = false; break; } }
-        if (ok) return { pattern, count: exactCount, exact: true };
-      }
-      // Найти сколько раз паттерн реально повторяется с начала (до первого несовпадения)
-      let realRepeats = 1;
-      outer: for (let rep = 1; rep * L <= arr.length; rep++) {
-        for (let j = 0; j < L; j++) {
-          const idx = rep * L + j;
-          if (idx >= arr.length || !eq(arr[idx], pattern[j])) { break outer; }
-        }
-        realRepeats = rep + 1;
-      }
-      if (realRepeats >= Math.max(minRepeats, 2)) {
-        const tail = arr.slice(realRepeats * L);
-        return { pattern, count: realRepeats, exact: false, tail };
-      }
-    }
-    return null;
-  }
-  const lines = [];
-  for (const line of blockLines) {
-    const ch = [...line.matchAll(/\[([^\]]+)\]/g)].map(m => m[1]);
-    if (!ch.length) continue;
-    // Всегда считаем строку чисто аккордной — текст для схлопывания не важен
-    lines.push({ chords: ch, hasText: false });
-  }
-  if (!lines.length) return [];
-
-  const lineChords = lines.map(l => l.chords);
-  const linePattern = (() => {
-    const fp = findPattern(lineChords, 1);
-    if (fp) return fp;
-    if (lineChords.length >= 3) {
-      const first = lineChords[0];
-      let reps = 1;
-      while (reps < lineChords.length && eq(lineChords[reps], first)) reps++;
-      if (reps >= 2 && reps < lineChords.length) return { pattern: [first], count: reps, exact: false, tail: lineChords.slice(reps) };
-    }
-    return null;
-  })();
-  if (linePattern && linePattern.count >= 2) {
-    const patLen = linePattern.pattern.length;
-    const linesWithChords = blockLines.filter(l => /\[/.test(l));
-    const firstPatternLines = linesWithChords.slice(0, patLen);
-    const inner = optimizeBlock(firstPatternLines);
-    const repeated = inner.length === 1
-      ? [{ ...inner[0], multiplier: (inner[0].multiplier || 1) * linePattern.count }]
-      : [{ type: 'group', items: inner, multiplier: linePattern.count }];
-    if (linePattern.tail && linePattern.tail.length > 0) {
-      const tailLines = linesWithChords.slice(linePattern.count * patLen);
-      const tailResult = tailLines.length > 0 ? optimizeBlock(tailLines) : [];
-      return [...repeated, ...tailResult];
-    }
-    return repeated;
-  }
-
-  const flat = lines.flatMap(l => l.chords);
-
-  if (lines.length >= 3) {
-    const first = lines[0].chords;
-    const second = lines[1].chords;
-    if (second.length === first.length + 1 && first.every((c, i) => c === second[i])) {
-      const restLines = lines.slice(2);
-      const anyMatchesFirst = restLines.some(l => eq(l.chords, first));
-      if (!anyMatchesFirst) {
-        const passageChord = second[second.length - 1];
-        const restResult = restLines.length > 0 ? optimizeBlock(restLines.map(l => l.chords.map(c => `[${c}]`).join(''))) : [];
-        return [{ type: 'single', chords: first, multiplier: 1, passage: passageChord }, ...restResult];
-      }
-    }
-  }
-
-  const lineBoundaries2 = new Set();
-  { let a=0; for(const l of lines){a+=l.chords.length; lineBoundaries2.add(a);} }
-  const pr = (() => {
-    const r = findPattern(flat);
-    if (!r || r.count < 2) return null;
-    const L = r.pattern.length;
-    // Для паттерна длиной 1 (один повторяющийся аккорд) границы строк не важны
-    if (L === 1) return r;
-    for (let i = 1; i <= r.count; i++) { if (!lineBoundaries2.has(i * L)) return null; }
-    return r;
-  })();
-  if (pr && pr.count >= 2) {
-    const p = pr.pattern;
-    const half = Math.floor(p.length / 2);
-    const tail = pr.tail && pr.tail.length > 0 ? [{ type: 'single', chords: pr.tail, multiplier: 1 }] : [];
-    if (p.length >= 4 && p.length % 2 === 0 && !eq(p.slice(0, half), p.slice(half))) {
-      return [{ type: 'pair', chords: p.slice(0, half), chords2: p.slice(half), multiplier: pr.count }, ...tail];
-    }
-    if (tail.length > 0) return [{ type: 'single', chords: p, multiplier: pr.count }, ...tail];
-    return [{ type: 'single', chords: p, multiplier: pr.count }];
-  }
-
-  {
-    const lineBoundaries = new Set();
-    let acc = 0;
-    for (const l of lines) { acc += l.chords.length; lineBoundaries.add(acc); }
-    for (let leadLen = 1; leadLen <= Math.min(8, flat.length - 1); leadLen++) {
-      if (!lineBoundaries.has(leadLen)) continue;
-      const leadChords = flat.slice(0, leadLen);
-      let repeats = 1;
-      while (repeats * leadLen < flat.length) {
-        const nextStart = repeats * leadLen;
-        const nextEnd = (repeats + 1) * leadLen;
-        if (!lineBoundaries.has(nextEnd)) break;
-        const next = flat.slice(nextStart, nextEnd);
-        if (!eq(next, leadChords)) break;
-        repeats++;
-      }
-      if (repeats >= 2) {
-        const tail = flat.slice(repeats * leadLen);
-        const tailResult = tail.length > 0 ? [{ type: 'single', chords: tail, multiplier: 1 }] : [];
-        return [{ type: 'single', chords: leadChords, multiplier: repeats }, ...tailResult];
-      }
-    }
-  }
-
-  const expandedChunks = [];
-  for (const { chords, hasText } of lines) {
-    if (hasText) { expandedChunks.push(chords); continue; }
-    if (chords.length >= 2) {
-      // Всегда пробуем найти внутренний паттерн (даже для одной строки)
-      const inner = findPattern(chords, 1);
-      if (inner && inner.count >= 2) {
-        for (let k = 0; k < inner.count; k++) expandedChunks.push([...inner.pattern]);
-        continue;
-      }
-    }
-    expandedChunks.push(chords);
-  }
-
-  const merged = [];
-  let i = 0;
-  while (i < expandedChunks.length) {
-    let buf = [...expandedChunks[i]];
-    const prevMerged = merged[merged.length - 1];
-    const isRepeatOfPrev = prevMerged && eq(buf, prevMerged);
-    if (!isRepeatOfPrev) {
-      while (
-        buf.length <= 2 &&
-        i + 1 < expandedChunks.length &&
-        expandedChunks[i + 1].length <= 2 &&
-        buf.length + expandedChunks[i + 1].length <= 4 &&
-        !eq(buf, expandedChunks[i + 1]) &&
-        !eq(expandedChunks[i + 1], expandedChunks[i + 2] || [])
-      ) { i++; buf = [...buf, ...expandedChunks[i]]; }
-    }
-    merged.push(buf);
-    i++;
-  }
-
-  const pairC = [];
-  let pi = 0;
-  while (pi < merged.length) {
-    const a = merged[pi], b = merged[pi + 1], a2 = merged[pi + 2], b2 = merged[pi + 3];
-    if (b && a2 && b2 && eq(a, a2) && eq(b, b2) && !eq(a, b)) {
-      pairC.push({ type: 'pair', chords: a, chords2: b, multiplier: 2 });
-      pi += 4; continue;
-    }
-    pairC.push({ type: 'single', chords: merged[pi] });
-    pi++;
-  }
-
-  const result = [];
-  let ci = 0;
-  while (ci < pairC.length) {
-    const item = pairC[ci];
-    if (item.type === 'pair') { result.push(item); ci++; continue; }
-    const current = item.chords;
-    const next = pairC[ci + 1];
-    let mul = 1;
-    while (ci + mul < pairC.length && pairC[ci + mul].type === 'single' && eq(current, pairC[ci + mul].chords)) mul++;
-    if (mul > 1) { result.push({ type: 'single', chords: current, multiplier: mul }); ci += mul; continue; }
-    result.push({ type: 'single', chords: current, multiplier: 1 });
-    ci++;
-  }
-  return result;
-}
-
 // ═══════════════════════════════════════════
 //  MANUAL CHORDS-ONLY LAYOUT (изолированный слой для режима "Аккорды")
 //  Хранится отдельно от lyrics в song.chordsOnlyLayout — объект вида
 //  { [blockIndex]: { rows: [["Am","F","C"], ["Dm","G"]] } }.
 //  Если для блока нет записи — режим "Аккорды" продолжает работать как
-//  раньше: автоматическое сжатие через optimizeBlock() из текстовых
+//  раньше: автоматическое сжатие через ChordsEngine.autoGroupBlock() из
 //  аккордов того же блока. Как только пользователь отредактировал блок
 //  в изолированном редакторе — для него появляется запись и автосжатие
 //  перестаёт применяться для этого конкретного блока навсегда (точнее,
@@ -2674,7 +2481,7 @@ function getManualChordsLayout(song, bi) {
 //  клиент ключа не хранит и не видит. Результат сохраняется в
 //  song.chordsOnlyLayout — тот же слой, что и ручное редактирование,
 //  поэтому дальше используется штатный getManualChordsLayout()/
-//  manualLayoutToHtml() без каких-либо изменений в рендере.
+//  ChordsEngine.squareToHtml() без каких-либо изменений в рендере.
 // ═══════════════════════════════════════════
 const IMPROVE_CHORDS_URL = 'https://chordbook-improve.elapsov57.workers.dev';
 
@@ -2720,25 +2527,6 @@ async function callGeminiChordsLayout(song) {
   return parsed.blocks;
 }
 
-// Схлопывает подряд идущие ОДИНАКОВЫЕ строки в одну с полем mult[i] —
-// без этого Gemini честно возвращает каждый повтор отдельной строкой
-// (["A"],["A"],["A"]), и на экране это выглядело бы как 3 отдельных
-// квадрата вместо одного "A ×3", то есть хуже, чем было до AI-кнопки.
-function collapseRepeatedRows(rows) {
-  const outRows = [];
-  const outMult = [];
-  let i = 0;
-  while (i < rows.length) {
-    const cur = rows[i];
-    let mul = 1;
-    while (i + mul < rows.length && JSON.stringify(rows[i + mul]) === JSON.stringify(cur)) mul++;
-    outRows.push(cur);
-    outMult.push(mul);
-    i += mul;
-  }
-  return { rows: outRows, mult: outMult };
-}
-
 async function improveChordsWithGemini(song) {
   const blocksResult = await callGeminiChordsLayout(song);
   // Снимок раскладки ДО перезаписи — хранится в самой песне, чтобы можно
@@ -2746,10 +2534,24 @@ async function improveChordsWithGemini(song) {
   // пока не будет запущено новое AI-улучшение или ручное редактирование.
   const prevLayout = song.chordsOnlyLayout ? JSON.parse(JSON.stringify(song.chordsOnlyLayout)) : null;
   const layout = song.chordsOnlyLayout ? Object.assign({}, song.chordsOnlyLayout) : {};
+  // Текущие блоки песни — нужны, чтобы проставить стабильный key каждой
+  // записи (иначе remapChordsLayout не сможет её найти после правки текста).
+  const currentBlocks = parseSong(song.lyrics, 0);
+  const curTranspose = song.id === currentSongId ? transposeOffset : (transposeMap[song.id] || 0);
+  const curNotation = getSongNotation(song.id) || 'sharp';
   let changed = 0;
   blocksResult.forEach(b => {
     if (typeof b.index !== 'number' || !Array.isArray(b.rows) || !b.rows.length) return;
-    layout[b.index] = collapseRepeatedRows(b.rows);
+    const block = currentBlocks[b.index];
+    const collapsed = ChordsEngine.collapseRepeatedRows(b.rows);
+    layout[b.index] = Object.assign({}, collapsed, {
+      key: block ? ChordsEngine.computeBlockKey(block) : undefined,
+      // Проставляем ТЕКУЩую транспозицию/нотацию песни как точку отсчёта —
+      // иначе для уже транспонированной песни следующий рендер применил бы
+      // относительную дельту от 0, а не от текущего состояния (Баг 1 для AI-слоя).
+      baseTranspose: curTranspose,
+      baseNotation: curNotation
+    });
     changed++;
   });
   if (!changed) throw new Error('Не вернулось ни одной группировки');
@@ -2763,7 +2565,7 @@ async function improveChordsWithGemini(song) {
 
 // Откатывает последнее AI-улучшение схлопывания для песни — восстанавливает
 // раскладку, которая была до него (или полностью убирает ручную раскладку,
-// если до AI её не было и блоки рендерились через optimizeBlock).
+// если до AI её не было и блоки рендерились через ChordsEngine.autoGroupBlock).
 async function revertAiChords(song) {
   if (typeof song._aiChordsBackup === 'undefined') throw new Error('Нечего откатывать');
   const prevLayout = song._aiChordsBackup;
@@ -2780,7 +2582,7 @@ async function revertAiChords(song) {
   invalidateSongCache(song.id);
 }
 
-function renderChords(blocks, song) {
+function renderChords(blocks, song, transpose, notation) {
   function blockChordFlat(block) {
     const flat = [];
     for (const l of block.lines) for (const m of l.matchAll(/\[([^\]]+)\]/g)) flat.push(m[1]);
@@ -2815,64 +2617,28 @@ function renderChords(blocks, song) {
     });
   }
 
-  function squareToHtml(sq) {
-    if (sq.type === 'group') {
-      const rowsHtml = sq.items.map(item => squareToHtml(item)).join('');
-      const multHtml = '<span class="repeat-badge repeat-inline">\xd7'+sq.multiplier+'</span>';
-      return '<div class="group-repeat-block">'
-        +'<div class="group-repeat-left">'+multHtml+'</div>'
-        +'<div class="group-repeat-bracket"></div>'
-        +'<div style="flex:1">'
-        +'<div class="group-repeat-rows">'+rowsHtml+'</div>'
-        +'</div>'
-        +'</div>';
-    }
-    if (sq.type === 'pair') {
-      const rowA = sq.chords.map(c => '<span class="chord-badge">'+escapeHtml(c)+'</span>').join('');
-      const rowB = sq.chords2.map(c => '<span class="chord-badge">'+escapeHtml(c)+'</span>').join('');
-      const multHtml = '<span class="repeat-badge repeat-inline">\xd7'+sq.multiplier+'</span>';
-      return '<div class="chords-only-row" style="margin-bottom:6px;align-items:center;flex-wrap:wrap;">'
-        +'<span style="display:inline-flex;align-items:center;gap:3px;flex-wrap:wrap">'+rowA+'</span>'
-        +'<span style="color:var(--muted);font-size:11px;padding:0 4px">|</span>'
-        +'<span style="display:inline-flex;align-items:center;gap:3px;flex-wrap:wrap">'+rowB+'</span>'
-        +multHtml+'</div>';
-    }
-    const chordsHtml = sq.chords.map(c => '<span class="chord-badge">'+escapeHtml(c)+'</span>').join('');
-    const passageHtml = sq.passage ? '<span class="passage-badge">('+escapeHtml(sq.passage)+')</span>' : '';
-    const mulN = sq.multiplier > 1 ? sq.multiplier : (sq.lineRepeat > 1 ? sq.lineRepeat : 0);
-    const multHtml = mulN > 1 ? '<span class="repeat-badge repeat-inline">\xd7'+mulN+'</span>' : '';
-    return '<div class="chords-only-row" style="margin-bottom:6px;align-items:center;flex-wrap:nowrap;overflow:visible;">'+chordsHtml+passageHtml+multHtml+'</div>';
-  }
-
-  // Ручная раскладка рендерится напрямую построчно — без optimizeBlock,
-  // без pair-склейки: это именно то, что пользователь сам разложил руками
-  // в изолированном редакторе (или что вернул AI), автоматика здесь не
-  // участвует ни в группировке, ни в дедупликации строк. Единственное
-  // исключение — необязательное поле layout.mult[i]: если оно есть и >1,
-  // рисуем бейдж ×N (его проставляет постобработка ответа Gemini для
-  // подряд идущих одинаковых строк; обычный ручной редактор это поле
-  // не создаёт и потому не затрагивается).
-  function manualLayoutToHtml(layout) {
-    return layout.rows.map((row, i) => {
-      if (!row.length) return '';
-      const chordsHtml = row.map(c => '<span class="chord-badge">'+escapeHtml(c)+'</span>').join('');
-      const mulN = layout.mult && layout.mult[i] > 1 ? layout.mult[i] : 0;
-      const multHtml = mulN > 1 ? '<span class="repeat-badge repeat-inline">\xd7'+mulN+'</span>' : '';
-      return '<div class="chords-only-row" style="margin-bottom:6px;align-items:center;flex-wrap:wrap;">'+chordsHtml+multHtml+'</div>';
-    }).join('');
-  }
-
+  // Единый рендер обоих путей (авто + ручной/AI) через chords-engine.js —
+  // раньше squareToHtml и ChordsEngine.squareToHtml дублировали ×N-логику по
+  // отдельности, из-за чего AI-результат мог не схлопнуться. Теперь
+  // manualRowsToSquares() приводит {rows,mult} к тому же формату Square,
+  // что и autoGroupBlock, и squareToHtml() рендерит оба пути одинаково.
   return deduped.map(({ block, displayLabel, color, origIndex }) => {
-    const manualLayout = getManualChordsLayout(song, origIndex);
+    const rawManualLayout = getManualChordsLayout(song, origIndex);
     let squaresHtml;
-    if (manualLayout) {
-      squaresHtml = manualLayoutToHtml(manualLayout);
+    if (rawManualLayout) {
+      // Транспонируем раскладку ОТНОСИТЕЛЬНО её baseTranspose/baseNotation
+      // на лету — фикс "замерзания" ручной/AI-раскладки при смене
+      // транспозиции/♯-♭ (баг 1). Старые записи без этих полей трактуются
+      // как baseTranspose:0/baseNotation:'sharp' — см. chords-engine.js.
+      const manualLayout = ChordsEngine.applyTransposeToLayout(rawManualLayout, transpose || 0, notation);
+      const squares = ChordsEngine.manualRowsToSquares(manualLayout);
+      squaresHtml = squares.map(ChordsEngine.squareToHtml).join('');
       if (!squaresHtml && !block.label) return '';
     } else {
-      // optimizeBlock сам игнорирует текст — передаём строки как есть
-      const squares = optimizeBlock(block.lines);
+      // autoGroupBlock сам игнорирует текст — передаём строки как есть
+      const squares = ChordsEngine.autoGroupBlock(block.lines);
       if (!squares.length && !block.label) return '';
-      squaresHtml = squares.map(squareToHtml).join('');
+      squaresHtml = squares.map(ChordsEngine.squareToHtml).join('');
     }
     const collapsed = song && song.id ? isCollapsed(song.id, origIndex) : false;
     const colBtn = song && song.id
@@ -2981,7 +2747,7 @@ function renderSongContent(song, transpose) {
     }
   );
 
-  const html = mixed + renderChords(blocks, song);
+  const html = mixed + renderChords(blocks, song, transpose, notation);
   if (_renderCache.size >= RENDER_CACHE_MAX) {
     const firstKey = _renderCache.keys().next().value;
     _renderCache.delete(firstKey);
@@ -3601,7 +3367,15 @@ document.getElementById('save-song-btn').addEventListener('click', async () => {
     // должны обнуляться только из-за того, что пользователь поправил
     // текст/аккорды в основной форме.
     const prevChordsLayout = idx !== -1 ? songsCache[idx].chordsOnlyLayout : undefined;
-    if (prevChordsLayout) songData.chordsOnlyLayout = prevChordsLayout;
+    if (prevChordsLayout) {
+      // Раньше раскладка переносилась на новый текст по голому индексу
+      // блока без проверки, что структура блоков не изменилась — правка
+      // добавляла/удаляла/переставляла блок, и раскладка приклеивалась к
+      // чужому блоку (баг 2). Теперь ищем по стабильному key.
+      const newBlocks = parseSong(lyrics, 0);
+      const remapped = ChordsEngine.remapChordsLayout(prevChordsLayout, newBlocks);
+      if (Object.keys(remapped).length) songData.chordsOnlyLayout = remapped;
+    }
     if (idx !== -1) songsCache = [...songsCache.slice(0, idx), songData, ...songsCache.slice(idx + 1)];
     else songsCache = [songData, ...songsCache];
     invalidateSongCache(id);
@@ -5476,12 +5250,12 @@ function _ieCurrentTonic() {
 //  без понятия "строка текста", без привязки к (li, ci) из основного
 //  блока. Это значит: drag/tap/добавление/удаление здесь работают
 //  напрямую по индексам (row, col) в этой плоской модели — никакой
-//  реконструкции происхождения через optimizeBlock не требуется,
-//  потому что optimizeBlock в этом редакторе не участвует вовсе.
+//  реконструкции происхождения через ChordsEngine.autoGroupBlock не требуется,
+//  потому что ChordsEngine.autoGroupBlock в этом редакторе не участвует вовсе.
 //
 //  При первом входе в этот редактор для блока без сохранённой ручной
 //  раскладки — её нужно из чего-то материализовать, чтобы пользователь
-//  не начинал с пустого места. Используем текущий результат optimizeBlock
+//  не начинал с пустого места. Используем текущий результат ChordsEngine.autoGroupBlock
 //  как стартовую точку (разворачиваем все squares в плоские строки), но
 //  это лишь ОДНОРАЗОВАЯ инициализация: с этого момента дальше работает
 //  только ручная модель, automatic-пересжатие больше не происходит.
@@ -5489,7 +5263,7 @@ function _ieCurrentTonic() {
 
 let _ieChordsLayout = {}; // { [bi]: { rows: [[chord,...], ...] } } — рабочая копия на время сессии редактора
 
-// Разворачивает результат optimizeBlock в плоский список строк аккордов —
+// Разворачивает результат ChordsEngine.autoGroupBlock в плоский список строк аккордов —
 // используется только как стартовые данные при первом открытии
 // изолированного редактора для блока, у которого ещё нет ручной раскладки.
 function _ieFlattenSquaresToRows(squares) {
@@ -5513,21 +5287,47 @@ function _ieFlattenSquaresToRows(squares) {
   return rows.length ? rows : [[]];
 }
 
-// Возвращает рабочую раскладку блока для изолированного редактора,
-// материализуя её из optimizeBlock при первом обращении.
-function _ieGetOrInitChordsLayout(bi) {
-  if (_ieChordsLayout[bi] && Array.isArray(_ieChordsLayout[bi].rows)) return _ieChordsLayout[bi];
+// Строит стартовую раскладку блока из авто-группировки — ЧИСТАЯ функция,
+// ничего не пишет в _ieChordsLayout.
+function _ieBuildInitialLayout(bi) {
   const block = _ieBlocks[bi];
   const blockLines = block ? block.lines.map(l => l.chords.map(c => `[${c}]`).join('') + (l.lyric || '')) : [];
-  const squares = optimizeBlock(blockLines);
+  const squares = ChordsEngine.autoGroupBlock(blockLines);
   const rows = _ieFlattenSquaresToRows(squares);
-  _ieChordsLayout[bi] = { rows };
+  return { rows };
+}
+
+// ТОЛЬКО ДЛЯ ЧТЕНИЯ/РЕНДЕРА — не мутирует _ieChordsLayout. Раньше рендер
+// сам материализовал запись при каждом открытии редактора (баг 3): просто
+// открыть просмотр в режиме «Аккорды» уже замораживало ручную раскладку
+// для ВСЕХ блоков песни при нажатии «Сохранить», даже если пользователь
+// ничего не трогал. Теперь материализация — только по явному действию
+// пользователя (см. _ieMaterializeChordsLayout).
+function _ieGetChordsLayoutForDisplay(bi) {
+  if (_ieChordsLayout[bi] && Array.isArray(_ieChordsLayout[bi].rows)) return _ieChordsLayout[bi];
+  return _ieBuildInitialLayout(bi);
+}
+
+// Материализует запись в _ieChordsLayout[bi], если её ещё нет — вызывается
+// ТОЛЬКО из обработчиков реального редактирования (добавить/удалить/
+// перетащить аккорд), никогда из рендера. Проставляет key/baseTranspose/
+// baseNotation на новую запись сразу, чтобы remapChordsLayout и
+// applyTransposeToLayout работали для неё корректно с первого сохранения.
+function _ieMaterializeChordsLayout(bi) {
+  if (_ieChordsLayout[bi] && Array.isArray(_ieChordsLayout[bi].rows)) return _ieChordsLayout[bi];
+  const block = _ieBlocks[bi];
+  const base = _ieBuildInitialLayout(bi);
+  _ieChordsLayout[bi] = Object.assign({}, base, {
+    key: block ? ChordsEngine.computeBlockKey(block) : undefined,
+    baseTranspose: _inlineEditSong ? (transposeMap[_inlineEditSong.id] || 0) : 0,
+    baseNotation: _inlineEditSong ? (getSongNotation(_inlineEditSong.id) || 'sharp') : 'sharp'
+  });
   return _ieChordsLayout[bi];
 }
 
 function _ieRenderChordsOnlyEditorBlock(b, bi) {
   const color = getBlockColor(b.label, bi);
-  const layout = _ieGetOrInitChordsLayout(bi);
+  const layout = _ieGetChordsLayoutForDisplay(bi);
   const rowsHtml = layout.rows.map((row, ri) => {
     const chordsHtml = row.map((c, ci) =>
       `<span class="chord-badge" data-co-bi="${bi}" data-co-ri="${ri}" data-co-ci="${ci}">${escapeHtml(c)}</span>`
@@ -5572,7 +5372,7 @@ function _ieBindChordsOnlyEvents(inner, signal) {
 
   // Кнопка "Сбросить к авто" — удаляет ручную раскладку блока, режим
   // "Аккорды" для этого блока возвращается к автоматическому сжатию
-  // через optimizeBlock на основе текстовых аккордов блока.
+  // через ChordsEngine.autoGroupBlock на основе текстовых аккордов блока.
   inner.querySelectorAll('.co-editor-reset-btn[data-co-bi]').forEach(btn => {
     btn.addEventListener('click', e => {
       e.stopPropagation();
@@ -5594,7 +5394,7 @@ function _ieBindChordsOnlyEvents(inner, signal) {
     btn.addEventListener('click', e => {
       e.stopPropagation();
       const bi = +btn.dataset.coBi, ri = +btn.dataset.coRi;
-      const layout = _ieGetOrInitChordsLayout(bi);
+      const layout = _ieMaterializeChordsLayout(bi);
       if (!layout.rows[ri]) return;
       layout.rows[ri].push(_ieCurrentTonic());
       const newCi = layout.rows[ri].length - 1;
@@ -5611,7 +5411,7 @@ function _ieBindChordsOnlyEvents(inner, signal) {
     btn.addEventListener('click', e => {
       e.stopPropagation();
       const bi = +btn.dataset.coBi;
-      const layout = _ieGetOrInitChordsLayout(bi);
+      const layout = _ieMaterializeChordsLayout(bi);
       layout.rows.push([_ieCurrentTonic()]);
       _ieRedraw(_inlineEditSong);
     }, { signal });
@@ -5620,7 +5420,7 @@ function _ieBindChordsOnlyEvents(inner, signal) {
   // Аккорды внутри изолированного редактора: тап → попап редактирования,
   // long-press + drag → перенос в другую позицию (в т.ч. в другую строку
   // или другой блок). Координаты — просто (bi, ri, ci) в плоской модели,
-  // никакой реконструкции через optimizeBlock не требуется.
+  // никакой реконструкции через ChordsEngine.autoGroupBlock не требуется.
   inner.querySelectorAll('.co-editor-row .chord-badge[data-co-bi]').forEach(badge => {
     let sx, sy, dragging = false, longTimer, moved = false;
 
@@ -5661,7 +5461,7 @@ let _ieCoDragState = null; // {bi, ri, ci, chord}
 
 function _ieBeginChordsOnlyDrag(badge, cx, cy) {
   const bi = +badge.dataset.coBi, ri = +badge.dataset.coRi, ci = +badge.dataset.coCi;
-  const layout = _ieChordsLayout[bi];
+  const layout = _ieMaterializeChordsLayout(bi);
   const chord = layout?.rows[ri]?.[ci];
   if (!chord) return;
   _ieCoDragState = { bi, ri, ci, chord, badge };
@@ -5740,19 +5540,21 @@ function _ieEndChordsOnlyDrag(cx, cy) {
     return;
   }
 
-  const srcLayout = _ieChordsLayout[bi];
-  srcLayout.rows[ri].splice(ci, 1);
-  if (!srcLayout.rows[ri].length && srcLayout.rows.length > 1) srcLayout.rows.splice(ri, 1);
+  const { bi: tBi, ri: tRi, ci: tCi } = target;
 
-  let { bi: tBi, ri: tRi, ci: tCi } = target;
-  const dstLayout = _ieChordsLayout[tBi];
-  if (tBi===bi && tRi===ri && tCi>ci) tCi--;
-  // Если исходная строка была удалена целиком (стала пустой и не последней),
-  // а целевая строка находилась ниже неё в том же блоке — индекс строки
-  // сдвинулся; пересчитываем безопасный индекс через clamp по факту длины.
-  tRi = Math.min(tRi, Math.max(0, dstLayout.rows.length - (tBi===bi && tRi>=ri && srcLayout.rows.length < (dstLayout===srcLayout ? dstLayout.rows.length+1 : dstLayout.rows.length) ? 1 : 0)));
-  if (!dstLayout.rows[tRi]) dstLayout.rows[tRi] = [];
-  dstLayout.rows[tRi].splice(Math.max(0, tCi), 0, chord);
+  if (tBi === bi) {
+    // Перенос внутри ОДНОГО блока — чистая трансформация, сама
+    // разбирается со сдвигом индексов при удалении опустевшей строки,
+    // никогда не создаёт разреженный массив (regression-фикс).
+    const srcLayout = _ieMaterializeChordsLayout(bi);
+    _ieChordsLayout[bi] = ChordsEngine.editorMoveChord(srcLayout, { ri, ci }, { ri: tRi, ci: tCi });
+  } else {
+    const srcLayout = _ieMaterializeChordsLayout(bi);
+    const dstLayout = _ieMaterializeChordsLayout(tBi);
+    const result = ChordsEngine.editorMoveChordAcrossBlocks(srcLayout, { ri, ci }, dstLayout, { ri: tRi, ci: tCi });
+    _ieChordsLayout[bi] = result.src;
+    _ieChordsLayout[tBi] = result.dst;
+  }
 
   _ieRedraw(_inlineEditSong);
 }
@@ -5768,7 +5570,7 @@ function _ieOpenChordsOnlyPopup(badge) {
   _ieCoPopupCtx = { bi, ri, ci };
   const popup = document.getElementById('ie-chord-popup');
   const inp = document.getElementById('ie-cp-input');
-  inp.value = _ieChordsLayout[bi]?.rows[ri]?.[ci] || '';
+  inp.value = _ieGetChordsLayoutForDisplay(bi)?.rows[ri]?.[ci] || '';
   const hintEl = document.getElementById('ie-cp-mirror-hint');
   if (hintEl) hintEl.style.display = 'none';
   const r = badge.getBoundingClientRect();
@@ -5784,44 +5586,6 @@ function _ieOpenChordsOnlyPopup(badge) {
     document.addEventListener('touchend', _ieOutsideHandler, true);
     document.addEventListener('mousedown', _ieOutsideHandler, true);
   }, 300);
-}
-
-// ════════════════════════════════════
-//  COMPRESSED (chords-only-like) RENDER
-//  для режима "Аккорды" внутри редактора.
-//  optimizeBlock не модифицируется — вместо
-//  этого параллельно восстанавливаем, какому
-//  диапазону исходных (li,ci)-позиций
-//  соответствует каждый визуальный square.
-// ════════════════════════════════════
-
-// Плоский список позиций (li,ci) блока в исходном, несжатом порядке —
-// ровно в том порядке, в котором optimizeBlock потребляет аккорды.
-function _ieFlatPositions(block) {
-  const flat = [];
-  block.lines.forEach((line, li) => {
-    line.chords.forEach((ch, ci) => flat.push({ li, ci }));
-  });
-  return flat;
-}
-
-// Сколько исходных позиций "съедает" один square (с учётом multiplier —
-// каждый повтор паттерна — это отдельная группа исходных позиций).
-function _ieSquareSpan(sq) {
-  if (sq.type === 'group') {
-    const inner = sq.items.reduce((sum, it) => sum + _ieSquareSpan(it), 0);
-    return inner * (sq.multiplier || 1);
-  }
-  if (sq.type === 'pair') {
-    return (sq.chords.length + sq.chords2.length) * (sq.multiplier || 1);
-  }
-  // passage square визуально показывает базу один раз + индикатор лишнего
-  // аккорда, но РЕАЛЬНО представляет ДВЕ исходные строки: базовую
-  // (chords.length позиций) и следующую — та же база + 1 лишний аккорд
-  // (chords.length+1 позиций). Итого chords.length*2+1, не chords.length+1.
-  // optimizeBlock всегда ставит multiplier:1 вместе с passage (несовместимы).
-  if (sq.passage) return sq.chords.length * 2 + 1;
-  return sq.chords.length * (sq.multiplier || 1);
 }
 
 function _ieRenderBlockEditable(b, bi) {
@@ -6118,7 +5882,12 @@ function _iePopupSave() {
   // "Аккорды"), различаем по тому, какой контекст сейчас установлен.
   if (_ieCoPopupCtx) {
     const { bi, ri, ci } = _ieCoPopupCtx;
-    if (val && _ieChordsLayout[bi]?.rows[ri]) _ieChordsLayout[bi].rows[ri][ci] = val;
+    // Правка значения аккорда — реальное редактирование, материализуем
+    // блок, если он ещё не был тронут (не читаем "сырой" _ieChordsLayout
+    // напрямую — блок мог до сих пор существовать только как эфемерный
+    // авто-расчёт для отображения).
+    const layout = _ieMaterializeChordsLayout(bi);
+    if (val && layout.rows[ri]) layout.rows[ri][ci] = val;
     _ieCoPopupCtx = null;
     _ieHidePopups();
     _ieRedraw(_inlineEditSong);
