@@ -1467,6 +1467,18 @@
 [Am]Ещё строка [F]"></textarea>
       <div class="format-hint">Строки вида <strong>[Куплет]</strong>, <strong>[Припев]</strong>, <strong>[Бридж]</strong> станут заголовками блоков</div>
     </div>
+    <div class="form-group">
+      <details id="chords-only-details">
+        <summary class="form-label" style="cursor:pointer">Режим «Только аккорды» (опционально)</summary>
+        <textarea class="form-textarea" id="inp-chords-only" rows="6" style="margin-top:8px" placeholder="[Куплет 1]
+Am F C G ×4
+
+[Припев]
+F C G
+Am F C G ×2"></textarea>
+        <div class="format-hint">Если заполнено — автосжатие для этих блоков не применяется, показывается ровно то, что здесь написано. Метка блока (<strong>[Куплет 1]</strong>) должна совпадать с меткой в тексте песни выше. ×N в конце строки — сколько раз повторяется. Пустое поле = автоматическая группировка как обычно.</div>
+      </details>
+    </div>
     <input type="hidden" id="edit-song-id">
     <div class="form-group">
       <label class="form-label" for="inp-bpm">BPM</label>
@@ -3328,6 +3340,8 @@ function openAddSong() {
   document.getElementById('inp-key').value = 'C';
   document.getElementById('inp-lyrics').value = '';
   document.getElementById('inp-bpm').value = '';
+  document.getElementById('inp-chords-only').value = '';
+  document.getElementById('chords-only-details').open = false;
   document.getElementById('edit-song-id').value = '';
   document.getElementById('delete-song-btn').style.display = 'none';
   document.getElementById('add-song-title').textContent = 'Добавить песню';
@@ -3345,6 +3359,14 @@ function openEditSong(id) {
   document.getElementById('inp-key').value = song.key || 'C';
   document.getElementById('inp-lyrics').value = song.lyrics || '';
   document.getElementById('inp-bpm').value = song.bpm || '';
+  // Показываем ручную раскладку "Аккорды" (если есть) в том же
+  // текстовом мини-формате, что и ввод — чтобы её можно было
+  // отредактировать через основную форму, а не только через
+  // изолированный drag-and-drop редактор.
+  const existingLayout = song.chordsOnlyLayout;
+  const chordsOnlyText = existingLayout ? ChordsEngine.chordsOnlyLayoutToText(existingLayout, parseSong(song.lyrics, 0)) : '';
+  document.getElementById('inp-chords-only').value = chordsOnlyText;
+  document.getElementById('chords-only-details').open = !!chordsOnlyText;
   document.getElementById('edit-song-id').value = id;
   document.getElementById('delete-song-btn').style.display = '';
   document.getElementById('add-song-title').textContent = 'Редактировать';
@@ -3392,6 +3414,28 @@ document.getElementById('save-song-btn').addEventListener('click', async () => {
       const remapped = ChordsEngine.remapChordsLayout(prevChordsLayout, newBlocks);
       if (Object.keys(remapped).length) songData.chordsOnlyLayout = remapped;
     }
+  }
+
+  // Ручной ввод режима "Только аккорды" из основной формы — если
+  // заполнено, ПОЛНОСТЬЮ перезаписывает раскладку блоков (сматченных по
+  // метке), которую вернула логика remap выше: пользователь явно
+  // указал, что должно быть показано, автосжатие для этих блоков
+  // отключается. Пустое поле = поведение не меняется (см. remap выше).
+  const chordsOnlyRaw = document.getElementById('inp-chords-only').value.trim();
+  if (chordsOnlyRaw) {
+    const parsed = ChordsEngine.parseChordsOnlyText(chordsOnlyRaw);
+    const songBlocksForChords = parseSong(lyrics, 0);
+    const { layout, unmatched } = ChordsEngine.buildChordsOnlyLayout(parsed, songBlocksForChords, 0, 'sharp');
+    if (Object.keys(layout).length) {
+      songData.chordsOnlyLayout = Object.assign({}, songData.chordsOnlyLayout, layout);
+    }
+    if (unmatched.length) {
+      showToast('Не найден блок с меткой: ' + unmatched.join(', '));
+    }
+  }
+
+  if (id) {
+    const idx = songsCache.findIndex(s => s.id === id);
     if (idx !== -1) songsCache = [...songsCache.slice(0, idx), songData, ...songsCache.slice(idx + 1)];
     else songsCache = [songData, ...songsCache];
     invalidateSongCache(id);
@@ -4356,14 +4400,35 @@ document.querySelectorAll('.nav-btn[data-page]').forEach(btn => {
     if (pulling) reset(true);
   }, { passive: true });
 })();
-const AI_PROMPT = `Конвертируй эти аккорды в JSON. Верни ТОЛЬКО JSON без пояснений и markdown.
+const AI_PROMPT = `Конвертируй эти аккорды в JSON для приложения ChordBook.
+Верни ТОЛЬКО валидный JSON без пояснений, без markdown-обёртки \`\`\`.
 
-Формат одной песни:
-{"title":"Название","artist":"Автор","key":"Am","lyrics":"[Куплет 1]\\n[Am]Строка текста [G]\\n[C]Ещё строка\\n\\n[Припев]\\n[F]Текст припева [C]"}
+Формат ОДНОЙ песни — объект с полями:
+- title (строка, обязательно) — название песни
+- artist (строка, опционально) — исполнитель/автор
+- key (строка, опционально) — тональность, например "Am"
+- lyrics (строка, обязательно) — весь текст с аккордами в квадратных
+  скобках перед словом, к которому они относятся: [Am]Строка текста [G]
+  Названия блоков — на своей строке в квадратных скобках без аккорда:
+  [Куплет 1], [Припев], [Бридж]. Блоки разделяются пустой строкой.
+- chordsOnly (строка, опционально) — ЗАПОЛНЯЙ ТОЛЬКО если для какого-то
+  блока нужно ЗАФИКСИРОВАТЬ ручную раскладку аккордов в режиме "Только
+  аккорды" (когда автоматическая группировка выдаёт не то, что нужно).
+  Формат: для каждого блока — строка [Метка блока] (метка ДОЛЖНА
+  совпадать с меткой в lyrics), затем на отдельных строках "квадраты" —
+  аккорды через пробел, при повторе — суффикс ×N в конце строки.
+  Если весь блок повторяется целиком N раз — одна строка с ×N, а не N
+  одинаковых строк. Если chordsOnly не нужен — просто не включай это
+  поле совсем (не пустую строку).
 
-ВАЖНО: все переносы строк внутри lyrics пиши как \\n, НЕ настоящий перенос строки.
-Аккорды в квадратных скобках: [Am] [G] [C]. Блоки [Куплет], [Припев], [Бридж] на отдельной строке.
-Если несколько песен — верни массив JSON: [{...},{...}]`;
+ВАЖНО про lyrics и chordsOnly: внутри JSON-строки перенос строки — это
+ДВА символа \\n (обратный слэш + n), а НЕ настоящий Enter/перевод строки.
+
+Пример одной песни целиком (с chordsOnly для Бриджа, где 4 повтора
+одной и той же фразы должны идти ОДНОЙ строкой, а не четырьмя):
+{"title":"Пример","artist":"Автор","key":"Am","lyrics":"[Куплет 1]\\n[Am]Строка текста [G]\\n[C]Ещё строка\\n\\n[Припев]\\n[F]Текст припева [C]\\n\\n[Бридж]\\n[Am]Раз [F]Раз\\n[Am]Раз [F]Раз\\n[Am]Раз [F]Раз\\n[Am]Раз [F]Раз","chordsOnly":"[Бридж]\\nAm F ×4"}
+
+Если несколько песен — верни массив таких объектов: [{...},{...}]`;
 
 document.getElementById('ai-prompt-text').textContent = AI_PROMPT;
 
@@ -4415,6 +4480,20 @@ function convertToLyrics(s) {
   return '';
 }
 
+// Необязательное поле "chordsOnly" в импортируемом JSON — тот же
+// текстовый мини-формат, что и ручной ввод в форме песни (см.
+// ChordsEngine.parseChordsOnlyText). Позволяет в ОДНОЙ записи JSON
+// сразу задать и обычный текст с аккордами (lyrics), и отдельную
+// ручную раскладку режима "Только аккорды", которая при рендере не
+// подвергается автосжатию — показывается ровно как написано.
+function buildChordsOnlyLayoutFromImport(s, lyrics) {
+  if (!s || typeof s.chordsOnly !== 'string' || !s.chordsOnly.trim()) return { layout: undefined, unmatched: [] };
+  const parsed = ChordsEngine.parseChordsOnlyText(s.chordsOnly.replace(/\\n/g, '\n'));
+  const songBlocks = parseSong(lyrics, 0);
+  const { layout, unmatched } = ChordsEngine.buildChordsOnlyLayout(parsed, songBlocks, 0, 'sharp');
+  return { layout: Object.keys(layout).length ? layout : undefined, unmatched };
+}
+
 function processJsonFile(file) {
   const reader = new FileReader();
   reader.onload = e => {
@@ -4422,12 +4501,21 @@ function processJsonFile(file) {
       let data = JSON.parse(e.target.result);
       if (data.songs && Array.isArray(data.songs)) data = data.songs;
       if (!Array.isArray(data)) data = [data];
-      pendingImport = data.filter(s => s.title).map(s => ({
-        id: uid(), title: s.title||'Без названия', artist: s.artist||'',
-        key: (s.key||s.tonality||s.tone||'C').toString().replace(/[Тт]ональность/gi,'').trim()||'C',
-        lyrics: convertToLyrics(s), tags: s.tags||[], updatedAt: Date.now()
-      }));
+      const unmatchedAll = [];
+      pendingImport = data.filter(s => s.title).map(s => {
+        const lyrics = convertToLyrics(s);
+        const song = {
+          id: uid(), title: s.title||'Без названия', artist: s.artist||'',
+          key: (s.key||s.tonality||s.tone||'C').toString().replace(/[Тт]ональность/gi,'').trim()||'C',
+          lyrics, tags: s.tags||[], updatedAt: Date.now()
+        };
+        const { layout, unmatched } = buildChordsOnlyLayoutFromImport(s, lyrics);
+        if (layout) song.chordsOnlyLayout = layout;
+        if (unmatched.length) unmatchedAll.push(song.title + ': ' + unmatched.join(', '));
+        return song;
+      });
       showJsonPreview(pendingImport);
+      if (unmatchedAll.length) showToast('Не найдены блоки «только аккорды»: ' + unmatchedAll.join(' / '));
     } catch { showToast('Ошибка: неверный JSON формат'); }
   };
   reader.onerror = () => showToast('Ошибка чтения файла');
@@ -4482,10 +4570,15 @@ document.getElementById('parse-ai-btn').addEventListener('click', async () => {
   if (!Array.isArray(data)) data = [data];
   const newSongs = [];
   let added = 0, skipped = 0;
+  const unmatchedAll = [];
   for (const s of data.filter(x => x && x.title)) {
     const exists = songsCache.find(x => x.title.toLowerCase() === s.title.toLowerCase());
     if (exists) { skipped++; continue; }
-    const songData = { id: uid(), title: s.title, artist: s.artist||'', key: (s.key||'C'), lyrics: convertToLyrics(s), tags: s.tags||[], updatedAt: Date.now() };
+    const lyrics = convertToLyrics(s);
+    const songData = { id: uid(), title: s.title, artist: s.artist||'', key: (s.key||'C'), lyrics, tags: s.tags||[], updatedAt: Date.now() };
+    const { layout, unmatched } = buildChordsOnlyLayoutFromImport(s, lyrics);
+    if (layout) songData.chordsOnlyLayout = layout;
+    if (unmatched.length) unmatchedAll.push(songData.title + ': ' + unmatched.join(', '));
     newSongs.push(songData); added++;
   }
   if (newSongs.length) songsCache = [...newSongs, ...songsCache];
@@ -4493,6 +4586,7 @@ document.getElementById('parse-ai-btn').addEventListener('click', async () => {
   closeOverlay('overlay-import');
   renderSongs(document.getElementById('search-input').value);
   showToast(`Добавлено: ${added}${skipped ? ', пропущено: '+skipped : ''}`);
+  if (unmatchedAll.length) showToast('Не найдены блоки «только аккорды»: ' + unmatchedAll.join(' / '));
   document.getElementById('inp-ai-paste').value = '';
 });
 
