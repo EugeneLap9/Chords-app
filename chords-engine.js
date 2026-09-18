@@ -311,6 +311,109 @@
   }
 
   // ═══════════════════════════════════════════
+  //  РУЧНОЙ ВВОД РЕЖИМА "ТОЛЬКО АККОРДЫ" ПРИ СОЗДАНИИ/ИМПОРТЕ ПЕСНИ
+  //  Текстовый мини-формат (одинаковый и для формы добавления песни, и
+  //  для JSON-импорта, и для промпта AI):
+  //    [Название блока]
+  //    Am F C G ×4
+  //    F C G
+  //  Блок начинается строкой "[Название]" (должно совпадать с меткой
+  //  блока в lyrics), дальше — по одной строке на square, аккорды через
+  //  пробел, необязательный суффикс ×N/xN/*N задаёт multiplier (по
+  //  умолчанию 1). Если это указано — при рендере автосжатие
+  //  (autoGroupBlock) для блока НЕ применяется вообще: показывается
+  //  ровно то, что здесь написано, один в один.
+  // ═══════════════════════════════════════════
+  function parseChordsOnlyText(text) {
+    const lines = String(text || '').split('\n');
+    const blocks = [];
+    let current = null;
+
+    function pushRow(line) {
+      const trimmed = line.trim();
+      if (!trimmed) return;
+      if (!current) { current = { label: '', rows: [], mult: [] }; blocks.push(current); }
+      const tokens = trimmed.split(/\s+/);
+      let mult = 1;
+      const last = tokens[tokens.length - 1];
+      let m = /^[×xX*](\d+)$/.exec(last);
+      if (m) {
+        mult = parseInt(m[1], 10);
+        tokens.pop();
+      } else {
+        m = /^(.+)[×xX*](\d+)$/.exec(last);
+        if (m) { tokens[tokens.length - 1] = m[1]; mult = parseInt(m[2], 10); }
+      }
+      if (!tokens.length) return;
+      current.rows.push(tokens);
+      current.mult.push(mult > 0 ? mult : 1);
+    }
+
+    lines.forEach(function (line) {
+      const t = line.trim();
+      const labelMatch = /^\[([^\]]+)\]$/.exec(t);
+      if (labelMatch) {
+        current = { label: labelMatch[1].trim(), rows: [], mult: [] };
+        blocks.push(current);
+        return;
+      }
+      if (!t) return;
+      pushRow(line);
+    });
+
+    return blocks.filter(function (b) { return b.rows.length > 0; });
+  }
+
+  // Сопоставляет распарсенные блоки (parseChordsOnlyText) с реальными
+  // блоками песни (parseSong(lyrics,0)) по нормализованной метке — та же
+  // нормализация, что и в computeBlockKey. Метки должны совпадать
+  // ТЕКСТОМ (регистр/пробелы не важны); при совпадении нескольких
+  // блоков с одинаковой меткой — сопоставление по порядку появления.
+  // Непарные распарсенные блоки (метка не найдена среди блоков песни)
+  // возвращаются в unmatched, чтобы вызывающий код мог предупредить
+  // пользователя, а не тихо потерять его данные.
+  function buildChordsOnlyLayout(parsedBlocks, songBlocks, baseTranspose, baseNotation) {
+    const layout = {};
+    const unmatched = [];
+    const used = {};
+    (parsedBlocks || []).forEach(function (pb) {
+      const norm = _normalizeLabel(pb.label);
+      let foundIndex = -1;
+      for (let i = 0; i < (songBlocks || []).length; i++) {
+        if (used[i]) continue;
+        if (_normalizeLabel(songBlocks[i].label) === norm) { foundIndex = i; break; }
+      }
+      if (foundIndex === -1) { unmatched.push(pb.label); return; }
+      used[foundIndex] = true;
+      layout[foundIndex] = {
+        rows: pb.rows,
+        mult: pb.mult,
+        key: computeBlockKey(songBlocks[foundIndex]),
+        baseTranspose: baseTranspose || 0,
+        baseNotation: baseNotation || 'sharp'
+      };
+    });
+    return { layout: layout, unmatched: unmatched };
+  }
+
+  // Обратная операция — превращает сохранённый chordsOnlyLayout обратно
+  // в тот же текстовый мини-формат, чтобы показать/дать отредактировать
+  // его в форме песни.
+  function chordsOnlyLayoutToText(layout, songBlocks) {
+    if (!layout) return '';
+    const indices = Object.keys(layout).map(Number).sort(function (a, b) { return a - b; });
+    return indices.map(function (bi) {
+      const entry = layout[bi];
+      const label = (songBlocks && songBlocks[bi] && songBlocks[bi].label) || '';
+      const rowsText = (entry.rows || []).map(function (row, i) {
+        const mult = (entry.mult && entry.mult[i] > 1) ? ' \xd7' + entry.mult[i] : '';
+        return row.join(' ') + mult;
+      }).join('\n');
+      return (label ? '[' + label + ']\n' : '') + rowsText;
+    }).join('\n\n');
+  }
+
+  // ═══════════════════════════════════════════
   //  РУЧНОЙ РЕДАКТОР — ЧИСТЫЕ ТРАНСФОРМАЦИИ СОСТОЯНИЯ
   //  (add/remove/drag). Каждая функция возвращает НОВЫЙ layout, исходный
   //  не мутируется. Строка удаляется целиком только если она опустела И
@@ -399,6 +502,9 @@
     collapseRepeatedRows: collapseRepeatedRows,
     computeBlockKey: computeBlockKey,
     remapChordsLayout: remapChordsLayout,
+    parseChordsOnlyText: parseChordsOnlyText,
+    buildChordsOnlyLayout: buildChordsOnlyLayout,
+    chordsOnlyLayoutToText: chordsOnlyLayoutToText,
     transposeChord: transposeChord,
     applyTransposeToLayout: applyTransposeToLayout,
     manualRowsToSquares: manualRowsToSquares,
