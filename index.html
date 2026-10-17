@@ -1,0 +1,390 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self' https://telegram.org https://fonts.googleapis.com https://fonts.gstatic.com; script-src 'self' 'unsafe-inline' https://telegram.org; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; connect-src https://chordbook-api.elapsov57.workers.dev https://chordbook-improve.elapsov57.workers.dev; media-src 'self' blob:; img-src 'self' data:; worker-src 'none'">
+<title>ChordBook</title>
+<script>
+(function() {
+  if ('serviceWorker' in navigator) navigator.serviceWorker.getRegistrations().then(r => r.forEach(x => x.unregister())).catch(()=>{});
+  if ('caches' in window) caches.keys().then(keys => keys.forEach(k => caches.delete(k))).catch(()=>{});
+})();
+</script>
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Onest:wght@400;500;600;700;800&family=Barlow+Condensed:wght@500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body class="page-list">
+
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <symbol id="i-back" viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7"/></symbol>
+  <symbol id="i-more" viewBox="0 0 24 24"><circle cx="5" cy="12" r="1.2"/><circle cx="12" cy="12" r="1.2"/><circle cx="19" cy="12" r="1.2"/></symbol>
+  <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="6.5"/><path d="M20 20l-4-4"/></symbol>
+  <symbol id="i-songs" viewBox="0 0 24 24"><path d="M9 18V6l10-2v12"/><circle cx="6.5" cy="18" r="2.5"/><circle cx="16.5" cy="16" r="2.5"/></symbol>
+  <symbol id="i-list" viewBox="0 0 24 24"><path d="M9 6h11M9 12h11M9 18h11"/><path d="M4 6h.01M4 12h.01M4 18h.01"/></symbol>
+  <symbol id="i-gear" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 2.5v2.2M12 19.3v2.2M4.6 4.6l1.6 1.6M17.8 17.8l1.6 1.6M2.5 12h2.2M19.3 12h2.2M4.6 19.4l1.6-1.6M17.8 6.2l1.6-1.6"/></symbol>
+  <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+  <symbol id="i-edit" viewBox="0 0 24 24"><path d="M4 20h4L19 9l-4-4L4 16v4z"/></symbol>
+  <symbol id="i-left" viewBox="0 0 24 24"><path d="M14 6l-6 6 6 6"/></symbol>
+  <symbol id="i-right" viewBox="0 0 24 24"><path d="M10 6l6 6-6 6"/></symbol>
+  <symbol id="i-up" viewBox="0 0 24 24"><path d="M6 14l6-6 6 6"/></symbol>
+  <symbol id="i-down" viewBox="0 0 24 24"><path d="M6 10l6 6 6-6"/></symbol>
+  <symbol id="i-split" viewBox="0 0 24 24"><path d="M20 6v5a3 3 0 0 1-3 3H5M9 10l-4 4 4 4"/></symbol>
+  <symbol id="i-trash" viewBox="0 0 24 24"><path d="M5 7h14M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/></symbol>
+  <symbol id="i-x" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></symbol>
+  <symbol id="i-grip" viewBox="0 0 24 24"><path d="M5 9h14M5 15h14"/></symbol>
+  <symbol id="i-mic" viewBox="0 0 24 24"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></symbol>
+  <symbol id="i-sync" viewBox="0 0 24 24"><path d="M20 11a8 8 0 0 0-14.3-4.9L4 8M4 13a8 8 0 0 0 14.3 4.9L20 16M4 4v4h4M20 20v-4h-4"/></symbol>
+</svg>
+
+<div class="ptr-indicator" id="ptr-indicator">↓</div>
+
+<div class="header" id="main-header">
+  <button class="icon-btn" id="back-btn" style="display:none" aria-label="Назад"><svg class="ico"><use href="#i-back"/></svg></button>
+  <div class="header-title" id="header-title">Песни</div>
+  <div class="header-actions" id="header-actions"></div>
+</div>
+
+<div class="search-wrap" id="search-wrap">
+  <span class="search-icon"><svg class="ico"><use href="#i-search"/></svg></span>
+  <input class="search-input" id="search-input" type="search" placeholder="Название, автор или строка" autocomplete="off" aria-label="Поиск песен">
+</div>
+<div class="search-stats" id="search-stats"></div>
+<div class="sort-chips" id="sort-chips" style="display:none">
+  <button class="sort-chip active" data-sort="recent">Недавние</button>
+  <button class="sort-chip" data-sort="alpha">А–Я</button>
+</div>
+<div class="tag-filter-bar" id="tag-filter-bar" style="display:none"></div>
+
+<div class="page active" id="page-songs"><div id="songs-container"></div></div>
+<div class="page" id="page-setlists"><div id="setlists-container"></div></div>
+<div class="page" id="page-song-view">
+  <div class="perf-nav" id="perf-nav-buttons"></div>
+  <div class="song-view-header" id="song-header"></div>
+  <div class="inline-edit-banner" id="inline-edit-banner">
+    <span class="inline-edit-banner-label" id="inline-edit-label">Редактирование</span>
+    <button class="inline-edit-cancel-btn" id="inline-edit-undo" title="Отменить последнее действие" aria-label="Шаг назад">↶</button>
+    <button class="inline-edit-cancel-btn" id="inline-edit-cancel">Отмена</button>
+    <button class="inline-edit-save-btn" id="inline-edit-save">Сохранить</button>
+  </div>
+  <div class="song-content mode-both" id="song-content-area"><div id="song-content-inner"></div></div>
+</div>
+<div class="page" id="page-setlist-view"><div id="setlist-view-content"></div></div>
+
+<button class="fab" id="fab-btn" aria-label="Добавить"><svg class="ico"><use href="#i-plus"/></svg></button>
+
+<nav class="bottom-nav" aria-label="Навигация">
+  <button class="nav-btn active" data-page="songs"><svg class="ico"><use href="#i-songs"/></svg>Песни</button>
+  <button class="nav-btn" data-page="setlists"><svg class="ico"><use href="#i-list"/></svg>Сет-листы</button>
+  <button class="nav-btn" id="settings-nav-btn"><svg class="ico"><use href="#i-gear"/></svg>Настройки</button>
+</nav>
+
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+<span class="ie-drag-ghost" id="ie-drag-ghost"></span>
+
+<!-- POPUP: аккорд в построчном редакторе -->
+<div class="chord-edit-popup" id="ie-chord-popup">
+  <input id="ie-cp-input" type="text" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" maxlength="14" placeholder="Am">
+  <div class="ce-palette" id="ie-cp-palette"></div>
+  <div class="chord-popup-row1">
+    <button class="chord-popup-delete" id="ie-cp-del">🗑 Удалить</button>
+    <button class="chord-popup-ok" id="ie-cp-ok">OK</button>
+  </div>
+</div>
+
+<!-- POPUP: строка в построчном редакторе -->
+<div class="chord-edit-popup" id="ie-line-popup">
+  <div style="font-size:11px;font-weight:700;color:var(--muted);text-align:center">Строка</div>
+  <button class="chord-popup-soft" id="ie-line-addchord">🎵 Добавить аккорд</button>
+  <button class="chord-popup-soft" id="ie-line-text">✎ Текст строки</button>
+  <button class="chord-popup-soft" id="ie-line-add">＋ Добавить строку ниже</button>
+  <button class="chord-popup-delete" id="ie-line-del">🗑 Удалить строку</button>
+</div>
+
+<!-- Выбор аккорда в редакторе квадратов (нижняя панель) -->
+<div class="chord-edit-popup" id="ce-popup">
+  <div class="ce-sheet-title">
+    <input id="ce-input" type="text" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" maxlength="14" aria-label="Аккорд">
+    <span>Удерживайте аккорд в квадрате, чтобы перетащить</span>
+    <button class="chord-popup-ok ce-ok-inline" id="ce-ok">OK</button>
+  </div>
+  <div class="ce-palette-label">Аккорды тональности</div>
+  <div class="ce-palette" id="ce-palette-key"></div>
+  <div class="ce-palette-label" id="ce-palette-song-label">Ещё в песне</div>
+  <div class="ce-palette" id="ce-palette-song"></div>
+  <div class="chord-popup-row1">
+    <button class="chord-popup-soft" id="ce-left" aria-label="Сдвинуть влево"><svg class="ico"><use href="#i-left"/></svg></button>
+    <button class="chord-popup-soft" id="ce-split" title="Перенести остаток на новую строку"><svg class="ico"><use href="#i-split"/></svg>Строка</button>
+    <button class="chord-popup-soft" id="ce-right" aria-label="Сдвинуть вправо"><svg class="ico"><use href="#i-right"/></svg></button>
+    <button class="chord-popup-delete" id="ce-del" aria-label="Удалить аккорд" style="flex:0 0 52px"><svg class="ico"><use href="#i-trash"/></svg></button>
+  </div>
+</div>
+
+<!-- ADD SONG -->
+<div class="overlay" id="overlay-add-song" role="dialog" aria-modal="true" aria-label="Добавить песню">
+  <div class="drawer">
+    <div class="drawer-handle"></div>
+    <div class="drawer-header">
+      <div class="drawer-title" id="add-song-title">Добавить песню</div>
+      <button class="drawer-close" data-close="overlay-add-song" aria-label="Закрыть">✕</button>
+    </div>
+    <div class="hint-box">
+      <strong>Формат:</strong> аккорды в квадратных скобках прямо в тексте <code>[Am]Слова [F]песни</code> или строкой над словами <code>[Am] [F] [C]</code>. Повтор строки — <code>[Am] [F] x4</code>.
+    </div>
+    <div class="form-group"><label class="form-label" for="inp-title">Название</label><input class="form-input" id="inp-title" placeholder="Название песни"></div>
+    <div class="form-row">
+      <div class="form-group"><label class="form-label" for="inp-artist">Исполнитель</label><input class="form-input" id="inp-artist" placeholder="Автор"></div>
+      <div class="form-group"><label class="form-label" for="inp-key">Тональность</label>
+        <select class="form-select" id="inp-key">
+          <optgroup label="Мажор">
+            <option value="C">C</option><option value="C#">C# / Db</option><option value="D">D</option><option value="D#">D# / Eb</option>
+            <option value="E">E</option><option value="F">F</option><option value="F#">F# / Gb</option><option value="G">G</option>
+            <option value="G#">G# / Ab</option><option value="A">A</option><option value="A#">A# / Bb</option><option value="B">B</option>
+          </optgroup><optgroup label="Минор">
+            <option value="Cm">Cm</option><option value="C#m">C#m</option><option value="Dm">Dm</option><option value="D#m">D#m</option>
+            <option value="Em">Em</option><option value="Fm">Fm</option><option value="F#m">F#m</option><option value="Gm">Gm</option>
+            <option value="G#m">G#m</option><option value="Am">Am</option><option value="A#m">A#m</option><option value="Bm">Bm</option>
+          </optgroup>
+        </select>
+      </div>
+    </div>
+    <div class="form-group"><label class="form-label">Теги</label>
+      <div class="chips" id="tag-chips">
+        <div class="chip" data-tag="worship">worship</div><div class="chip" data-tag="praise">praise</div>
+        <div class="chip" data-tag="slow">slow</div><div class="chip" data-tag="fast">fast</div>
+        <div class="chip" data-tag="hymn">hymn</div><div class="chip" data-tag="рус">рус</div><div class="chip" data-tag="eng">eng</div>
+      </div>
+    </div>
+    <div class="form-group">
+      <label class="form-label" for="inp-lyrics">Текст с аккордами</label>
+      <textarea class="form-textarea" id="inp-lyrics" rows="10" placeholder="[Куплет 1]&#10;[Am]Слова первой строки&#10;[F]Вторая [C]строка [G]песни&#10;&#10;[Припев]&#10;[C]Строка припева [G]"></textarea>
+      <div class="format-hint">Строки вида <strong>[Куплет]</strong>, <strong>[Припев]</strong>, <strong>[Бридж]</strong> становятся заголовками блоков.</div>
+    </div>
+    <div class="form-group">
+      <details id="chords-only-details">
+        <summary class="form-label" style="cursor:pointer">Режим «Только аккорды» (необязательно)</summary>
+        <textarea class="form-textarea" id="inp-chords-only" rows="6" style="margin-top:8px" placeholder="[Куплет 1]&#10;Am F C G ×4&#10;&#10;[Припев]&#10;(F C | G Am) ×2&#10;Dm G"></textarea>
+        <div class="format-hint">Пусто — квадраты считаются автоматически. <strong>Am F ×4</strong> — строка 4 раза. <strong>(Am F | C G) ×2</strong> — квадрат из двух строк 2 раза. Метка должна совпадать с меткой в тексте; одинаковые метки сопоставляются по порядку. Очистите поле, чтобы вернуть автоматический режим.</div>
+      </details>
+    </div>
+    <input type="hidden" id="edit-song-id">
+    <div class="form-group">
+      <label class="form-label" for="inp-bpm">BPM</label>
+      <div style="display:flex;gap:8px">
+        <input class="form-input" id="inp-bpm" type="number" inputmode="numeric" min="30" max="300" placeholder="120" style="flex:1">
+        <button type="button" id="bpm-tap-btn" class="ctrl-btn" style="flex-shrink:0;height:44px;padding:0 14px">Tap</button>
+      </div>
+    </div>
+    <button class="btn-primary" id="save-song-btn">Сохранить</button>
+    <button class="btn-danger" id="delete-song-btn" style="display:none">Удалить песню</button>
+  </div>
+</div>
+
+<!-- ADD SETLIST -->
+<div class="overlay" id="overlay-add-setlist" role="dialog" aria-modal="true">
+  <div class="drawer">
+    <div class="drawer-handle"></div>
+    <div class="drawer-header"><div class="drawer-title">Новый сет-лист</div><button class="drawer-close" data-close="overlay-add-setlist" aria-label="Закрыть">✕</button></div>
+    <div class="form-group"><label class="form-label" for="inp-setlist-name">Название</label><input class="form-input" id="inp-setlist-name" placeholder="Воскресное служение"></div>
+    <div class="form-group"><label class="form-label" for="inp-setlist-date">Дата</label><input class="form-input" type="date" id="inp-setlist-date"></div>
+    <button class="btn-primary" id="save-setlist-btn">Создать</button>
+  </div>
+</div>
+
+<!-- EDIT SETLIST -->
+<div class="overlay" id="overlay-edit-setlist" role="dialog" aria-modal="true">
+  <div class="drawer">
+    <div class="drawer-handle"></div>
+    <div class="drawer-header"><div class="drawer-title">✏️ Сет-лист</div><button class="drawer-close" data-close="overlay-edit-setlist" aria-label="Закрыть">✕</button></div>
+    <div class="form-group"><label class="form-label" for="edit-sl-name">Название</label><input class="form-input" id="edit-sl-name"></div>
+    <div class="form-group"><label class="form-label" for="edit-sl-date">Дата</label><input class="form-input" id="edit-sl-date" type="date"></div>
+    <input type="hidden" id="edit-sl-id">
+    <button class="btn-primary" id="save-sl-btn">Сохранить</button>
+    <button class="btn-danger" id="delete-sl-btn">🗑 Удалить сет-лист</button>
+  </div>
+</div>
+
+<div class="overlay" id="overlay-pick-setlist"><div class="drawer"><div class="drawer-handle"></div>
+  <div class="drawer-header"><div class="drawer-title">Добавить в сет-лист</div><button class="drawer-close" data-close="overlay-pick-setlist" aria-label="Закрыть">✕</button></div>
+  <div id="pick-setlist-list"></div></div></div>
+
+<div class="overlay" id="overlay-singer-picker"><div class="drawer"><div class="drawer-handle"></div>
+  <div class="drawer-header"><div class="drawer-title">🎤 Выбрать солиста</div><button class="drawer-close" data-close="overlay-singer-picker" aria-label="Закрыть">✕</button></div>
+  <div id="singer-picker-list"></div>
+  <div class="form-group" style="margin-top:10px"><label class="form-label" for="inp-new-singer">Новый солист</label>
+    <div style="display:flex;gap:8px"><input class="form-input" id="inp-new-singer" placeholder="Имя" style="flex:1">
+      <button class="ctrl-btn" id="add-singer-btn" style="background:var(--accent);border-color:var(--accent);color:#fff;height:44px">＋</button></div></div>
+</div></div>
+
+<!-- IMPORT -->
+<div class="overlay" id="overlay-import"><div class="drawer"><div class="drawer-handle"></div>
+  <div class="drawer-header"><div class="drawer-title">Импорт / Экспорт</div><button class="drawer-close" data-close="overlay-import" aria-label="Закрыть">✕</button></div>
+  <div class="import-tabs">
+    <button class="import-tab active" data-tab="manual">Вручную</button>
+    <button class="import-tab" data-tab="bot">Из бота 🤖</button>
+    <button class="import-tab" data-tab="json">JSON</button>
+    <button class="import-tab" data-tab="text">AI текст</button>
+    <button class="import-tab" data-tab="export">Экспорт</button>
+  </div>
+  <div class="import-panel active" id="itab-manual">
+    <div class="hint-box"><strong>Ручной ввод:</strong> название, текст с аккордами и остальные поля.</div>
+    <button class="btn-primary" id="open-manual-add-btn">✏️ Открыть форму</button>
+  </div>
+  <div class="import-panel" id="itab-bot">
+    <div class="hint-box"><strong>Как:</strong> скопируйте сообщение бота-парсера целиком и вставьте сюда.</div>
+    <div class="form-group"><label class="form-label" for="inp-bot-paste">Текст из бота</label>
+      <textarea class="form-textarea" id="inp-bot-paste" rows="8" placeholder="🎵 Название&#10;👤 Исполнитель&#10;🥁 BPM: 67&#10;&#10;1 куплет:&#10;F# C#m E H&#10;Слова..."></textarea></div>
+    <div id="bot-preview" style="display:none;margin-bottom:12px"><div class="section-header">Распознано:</div>
+      <div id="bot-preview-content" style="background:var(--glass-bg);border:1px solid var(--glass-border);border-radius:12px;padding:12px;font-size:12px;font-family:'SF Mono','Fira Code',monospace;white-space:pre-wrap;max-height:180px;overflow-y:auto;color:var(--accent2);line-height:1.7"></div></div>
+    <div style="display:flex;gap:8px">
+      <button class="btn-primary" id="parse-bot-preview-btn" style="background:var(--glass-bg);border:1px solid var(--glass-border);color:var(--primary);flex:0 0 auto;width:auto;padding:13px 18px;box-shadow:none">👁</button>
+      <button class="btn-primary" id="parse-bot-btn">✅ Разобрать и добавить</button>
+    </div>
+  </div>
+  <div class="import-panel" id="itab-json">
+    <div class="hint-box">Загрузите <strong>.json</strong> — бэкап ChordBook (песни, сет-листы, раскладки) или ответ AI.</div>
+    <div class="drop-zone" id="drop-zone"><div class="drop-icon">📂</div><div class="drop-label">Нажмите или перетащите .json</div>
+      <input type="file" id="file-input" accept=".json,application/json" style="display:none"></div>
+    <div id="json-preview" style="display:none">
+      <div class="section-header" style="margin-top:14px">Найдено песен: <span id="json-count">0</span><span id="json-sl-count"></span></div>
+      <div id="json-song-list" style="max-height:180px;overflow-y:auto;margin-bottom:12px"></div>
+      <button class="btn-primary" id="confirm-json-import">Импортировать</button>
+    </div>
+  </div>
+  <div class="import-panel" id="itab-text">
+    <div class="hint-box"><strong>Как:</strong> 1. Откройте Claude / ChatGPT / Gemini. 2. Отправьте фото или PDF с аккордами. 3. Вставьте промт:
+      <button class="ctrl-btn" id="copy-prompt-btn" style="margin-top:8px;width:100%;justify-content:center">📋 Скопировать промт</button>
+      <details style="margin-top:8px"><summary style="cursor:pointer;color:var(--muted);font-size:12px">Показать промт</summary>
+        <div id="ai-prompt-text" style="font-family:monospace;font-size:11px;background:var(--bg);border-radius:8px;padding:8px;margin-top:6px;color:var(--accent2);line-height:1.6;white-space:pre-wrap;word-break:break-word"></div></details>
+    </div>
+    <div class="form-group"><label class="form-label" for="inp-ai-paste">Ответ AI</label>
+      <textarea class="form-textarea" id="inp-ai-paste" rows="6" placeholder='{"title":"Название","lyrics":"[Куплет]\n[Am]Текст"}'></textarea></div>
+    <button class="btn-primary" id="parse-ai-btn">Разобрать и добавить</button>
+  </div>
+  <div class="import-panel" id="itab-export">
+    <div class="hint-box">Резервная копия всех песен и сет-листов.</div>
+    <div class="storage-info" id="storage-info"></div>
+    <button class="btn-primary" id="export-json-btn">💾 Скачать backup.json</button>
+  </div>
+</div></div>
+
+<!-- CHORDS-ONLY: текстовый редактор блока -->
+<div class="overlay" id="overlay-ce-text"><div class="drawer"><div class="drawer-handle"></div>
+  <div class="drawer-header"><div class="drawer-title" id="ce-text-title">Квадраты текстом</div><button class="drawer-close" data-close="overlay-ce-text" aria-label="Закрыть">✕</button></div>
+  <div class="hint-box"><strong>Am F C G ×4</strong> — строка 4 раза · <strong>(Am F | C G) ×2</strong> — квадрат из двух строк · каждая строка — отдельный квадрат.</div>
+  <textarea class="form-textarea" id="ce-text-input" rows="8" spellcheck="false" autocapitalize="off"></textarea>
+  <div class="ce-preview" id="ce-text-preview"></div>
+  <button class="btn-primary" id="ce-text-save" style="margin-top:12px">Применить</button>
+</div></div>
+
+<div class="overlay" id="overlay-sync-keys"><div class="drawer" style="max-height:85dvh"><div class="drawer-handle"></div>
+  <div class="drawer-header"><div class="drawer-title" id="sync-drawer-title">📡 Тональности</div><button class="drawer-close" data-close="overlay-sync-keys" aria-label="Закрыть">✕</button></div>
+  <div id="sync-drawer-body"></div><div style="display:flex;gap:8px;margin-top:12px" id="sync-drawer-btns"></div>
+</div></div>
+
+<div class="overlay" id="overlay-song-picker"><div class="drawer" style="max-height:85dvh"><div class="drawer-handle"></div>
+  <div class="drawer-header"><div class="drawer-title">Выберите песни</div><button class="drawer-close" data-close="overlay-song-picker" aria-label="Закрыть">✕</button></div>
+  <input class="form-input" id="picker-search" placeholder="🔍 Поиск..." style="margin-bottom:10px">
+  <div id="picker-song-list" style="max-height:55dvh;overflow-y:auto"></div>
+  <button class="btn-primary" id="picker-confirm" style="margin-top:10px">Добавить выбранные</button>
+</div></div>
+
+<!-- ПОРЯДОК ПЕСНИ -->
+<div class="overlay" id="overlay-arrangement" role="dialog" aria-modal="true" aria-label="Порядок песни"><div class="drawer"><div class="drawer-handle"></div>
+  <div class="drawer-header"><div class="drawer-title">Порядок песни</div><button class="drawer-close" data-close="overlay-arrangement" aria-label="Закрыть"><svg class="ico" style="width:16px;height:16px"><use href="#i-x"/></svg></button></div>
+  <div class="arr-preview" id="arr-preview"></div>
+  <div class="arr-list" id="arr-list"></div>
+  <div class="section-header" style="margin-top:0">Добавить часть</div>
+  <div class="arr-parts" id="arr-parts"></div>
+  <div class="arr-actions">
+    <button class="ctrl-btn" id="arr-reset">Как в тексте</button>
+    <button class="btn-primary" id="arr-save">Сохранить</button>
+  </div>
+</div></div>
+
+<!-- SETTINGS -->
+<div class="overlay" id="overlay-settings" role="dialog" aria-modal="true"><div class="drawer" style="max-height:85dvh"><div class="drawer-handle"></div>
+  <div class="drawer-header"><div class="drawer-title">Настройки</div><button class="drawer-close" data-close="overlay-settings" aria-label="Закрыть">✕</button></div>
+  <div class="section-header">Размер текста</div>
+  <div style="display:flex;align-items:center;gap:12px;margin-bottom:18px">
+    <button class="ctrl-btn" id="settings-font-down" style="width:44px;height:44px;font-size:20px;justify-content:center">−</button>
+    <div style="flex:1;text-align:center"><div id="settings-font-label" style="font-size:22px;font-weight:800;color:var(--primary)">100%</div></div>
+    <button class="ctrl-btn" id="settings-font-up" style="width:44px;height:44px;font-size:20px;justify-content:center">+</button>
+  </div>
+  <div class="section-header">Тема</div>
+  <div style="display:flex;gap:8px;margin-bottom:18px;flex-wrap:wrap">
+    <button class="settings-theme-btn ctrl-btn" data-theme="stage" style="flex:1;height:44px;justify-content:center">Сцена</button>
+    <button class="settings-theme-btn ctrl-btn" data-theme="day" style="flex:1;height:44px;justify-content:center">День</button>
+    <button class="settings-theme-btn ctrl-btn" data-theme="bw" style="flex:1;height:44px;justify-content:center">Контраст</button>
+  </div>
+  <div class="section-header">Режим по умолчанию</div>
+  <div style="display:flex;gap:8px;margin-bottom:18px">
+    <button class="settings-view-btn ctrl-btn" data-mode="both" style="flex:1;height:40px;justify-content:center;font-size:12px">Слова+♪</button>
+    <button class="settings-view-btn ctrl-btn" data-mode="words" style="flex:1;height:40px;justify-content:center;font-size:12px">Слова</button>
+    <button class="settings-view-btn ctrl-btn" data-mode="chords" style="flex:1;height:40px;justify-content:center;font-size:12px">Аккорды</button>
+  </div>
+  <div class="section-header">Диезы / бемоли (по умолчанию)</div>
+  <div style="display:flex;gap:10px;margin-bottom:18px">
+    <button class="settings-notation-btn ctrl-btn" data-notation="asis" style="flex:1;height:40px;justify-content:center;font-size:12px">Как введено</button>
+    <button class="settings-notation-btn ctrl-btn" data-notation="sharp" style="flex:1;height:40px;justify-content:center">♯</button>
+    <button class="settings-notation-btn ctrl-btn" data-notation="flat" style="flex:1;height:40px;justify-content:center">♭</button>
+  </div>
+  <div class="section-header">Плотность</div>
+  <div style="display:flex;gap:10px;margin-bottom:18px">
+    <button class="settings-density-btn ctrl-btn" data-density="normal" style="flex:1;height:40px;justify-content:center">Обычная</button>
+    <button class="settings-density-btn ctrl-btn" data-density="compact" style="flex:1;height:40px;justify-content:center">Компактная</button>
+  </div>
+  <div id="admin-section" style="display:none">
+    <div class="section-header">Администратор</div>
+    <button class="ctrl-btn" id="admin-migrate-btn" style="width:100%;height:46px;justify-content:center;margin-bottom:8px">Перенести данные из старой базы</button>
+    <button class="ctrl-btn" id="admin-trash-btn" style="width:100%;height:46px;justify-content:center;margin-bottom:8px">Корзина: удалённые песни</button>
+    <div id="admin-trash" style="margin-bottom:12px"></div>
+  </div>
+  <div class="section-header">Инструменты</div>
+  <button class="ctrl-btn" id="settings-tuner-btn" style="width:100%;height:46px;justify-content:center;margin-bottom:18px"><svg class="ico"><use href="#i-mic"/></svg>Тюнер</button>
+</div></div>
+
+<!-- TUNER -->
+<div class="overlay" id="overlay-tuner" role="dialog" aria-modal="true"><div class="drawer" style="padding-bottom:32px"><div class="drawer-handle"></div>
+  <div class="drawer-header"><div class="drawer-title">🎸 Тюнер</div><button class="drawer-close" id="tuner-close" aria-label="Закрыть">✕</button></div>
+  <div style="text-align:center;padding:8px 0 16px">
+    <div id="tuner-note" style="font-size:72px;font-weight:900;color:var(--primary);line-height:1;min-height:80px">–</div>
+    <div id="tuner-freq" style="font-size:13px;color:var(--muted);margin-top:4px;font-weight:600">– Hz</div>
+  </div>
+  <div style="position:relative;margin:0 16px 20px;height:80px">
+    <canvas id="tuner-canvas" width="400" height="80" style="width:100%;height:80px;border-radius:14px"></canvas>
+    <div id="tuner-cents" style="position:absolute;bottom:6px;left:50%;transform:translateX(-50%);font-size:13px;font-weight:800;color:var(--text)">0 ¢</div>
+  </div>
+  <div id="tuner-strings" style="display:flex;justify-content:center;gap:8px;flex-wrap:wrap;margin-bottom:16px"></div>
+  <div id="tuner-status" style="text-align:center;font-size:12px;color:var(--muted);margin-bottom:12px">🎙 Слушаю...</div>
+  <button id="tuner-mode-btn" class="ctrl-btn" style="width:100%;height:44px;justify-content:center">E-A-D-G-B-e</button>
+</div></div>
+
+<!-- ONBOARDING -->
+<div class="onboarding-overlay" id="onboarding" style="display:none"><div class="onboarding-sheet">
+  <div class="onboarding-dots"><div class="onboarding-dot active" id="ob-dot-0"></div><div class="onboarding-dot" id="ob-dot-1"></div><div class="onboarding-dot" id="ob-dot-2"></div></div>
+  <div class="onboarding-step active" id="ob-step-0">
+    <div class="onboarding-icon">🎵</div><div class="onboarding-title">Как добавить песню</div>
+    <div class="onboarding-desc">Кнопка <strong>＋</strong> внизу справа: вручную, из бота, JSON-бэкап, ответ AI или экспорт.</div>
+    <button class="onboarding-next" data-ob-next>Далее →</button>
+  </div>
+  <div class="onboarding-step" id="ob-step-1">
+    <div class="onboarding-icon">🎸</div><div class="onboarding-title">Режим «Аккорды»</div>
+    <div class="onboarding-desc">Приложение само находит квадраты и повторы — даже если аккорды раскиданы по разным строкам — и показывает <strong>Am F C G ×4</strong>. Сверху — порядок песни. Кнопка «Изменить» позволяет переставить части, добавить ещё один припев или поставить ×2.</div>
+    <button class="onboarding-next" data-ob-next>Далее →</button>
+  </div>
+  <div class="onboarding-step" id="ob-step-2">
+    <div class="onboarding-icon">✏️</div><div class="onboarding-title">Редактирование</div>
+    <div class="onboarding-desc">✏️ в песне: тап по аккорду — заменить (есть палитра аккордов тональности), удержание — перетащить, ◀ ▶ — сдвинуть, <strong>− ×N +</strong> — повторы квадрата, ↶ — шаг назад. Не забудьте <strong>Сохранить</strong>.</div>
+    <button class="onboarding-next" data-ob-next>Начать 🚀</button>
+  </div>
+</div></div>
+
+<script src="chords-engine.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
