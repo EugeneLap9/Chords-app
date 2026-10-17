@@ -14,6 +14,10 @@
   --safe-top: env(safe-area-inset-top, 0px);
   --safe-bottom: env(safe-area-inset-bottom, 0px);
   --font-ui: 'Onest', -apple-system, system-ui, sans-serif;
+  /* старые имена, которые встречаются во встроенных стилях */
+  --primary: var(--chord); --accent: var(--chord); --accent2: var(--chord);
+  --glass-bg: var(--surface-2); --glass-border: var(--line);
+  --green: var(--ok); --yellow: var(--warn); --red: var(--danger);
   --font-chord: 'Barlow Condensed', 'Arial Narrow', sans-serif;
   color-scheme: dark;
 }
@@ -197,13 +201,17 @@ body.page-list .header-title { font-size: 32px; font-weight: 800; letter-spacing
 .cs-repeated .cs-rows { border-left: 3px double var(--sec); border-right: 3px double var(--sec); padding: 0 12px 0 14px; }
 .cs-repeated .cs-rows::before, .cs-repeated .cs-rows::after { content: ''; position: absolute; top: 50%; width: 4px; height: 4px; margin-top: 2px; border-radius: 50%; background: var(--sec); box-shadow: 0 -8px 0 var(--sec); }
 .cs-repeated .cs-rows::before { left: 3px; } .cs-repeated .cs-rows::after { right: 3px; }
-.cs-row { display: grid; grid-template-columns: repeat(var(--cols, 4), minmax(0, 1fr)); align-items: center; position: relative; }
+.cs-row { display: grid; grid-template-columns: repeat(var(--cols, 4), minmax(max-content, 1fr)); align-items: center; position: relative; }
+/* строка не влезла даже после уменьшения — переносим такты, а не обрезаем */
+.cs-row.cs-wrap { display: flex; flex-wrap: wrap; row-gap: 2px; }
+.cs-row.cs-wrap .cs-bar { flex: 1 0 auto; }
+.cs-row.cs-wrap .cs-bar:first-child { border-left: 0; }
 .chord-badge { font-family: var(--font-chord); }
-.cs-bar { font: 600 calc(var(--song-font, 15px) * 1.75)/1.15 var(--font-chord); color: var(--chord); padding: 3px 0 3px 8px; border-left: 1px solid var(--line); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.cs-bar { font: 600 calc(var(--song-font, 15px) * 1.75 * var(--fit, 1))/1.15 var(--font-chord); color: var(--chord); padding: 3px 6px 3px 8px; border-left: 1px solid var(--line); white-space: nowrap; }
 .cs-bar:first-child { border-left: 0; padding-left: 2px; }
 .cs-bar sub, .ce-row .chord-badge sub { font-size: .55em; vertical-align: baseline; margin-left: 1px; }
 .cs-row-rep { position: absolute; right: -6px; top: -4px; font: 600 13px var(--font-chord); color: var(--muted); }
-.cs-rep { align-self: center; font: 700 calc(var(--song-font, 15px) * 1.85)/1 var(--font-chord); color: var(--sec); min-width: 38px; text-align: right; }
+.cs-rep { align-self: center; font: 700 calc(var(--song-font, 15px) * 1.85 * var(--fit, 1))/1 var(--font-chord); color: var(--sec); min-width: 38px; text-align: right; }
 .cs-repeat-note { font-weight: 500; color: var(--muted); font-size: 13px; }
 .cs-times-badge { font: 700 16px var(--font-chord); color: var(--sec); }
 .cs-manual-dot { font-size: 11px; font-weight: 600; color: var(--muted); }
@@ -417,8 +425,8 @@ body.inline-editing .ie-line-wrap:active { background: var(--surface); }
 .ce-stepper { display: flex; align-items: center; background: var(--surface-2); border-radius: 10px; }
 .ce-stepper button { width: 32px; height: 32px; border: 0; background: none; color: var(--text); font-size: 18px; cursor: pointer; }
 .ce-stepper span { min-width: 30px; text-align: center; font: 700 19px var(--font-chord); color: var(--sec); }
-.ce-row { display: flex; gap: 5px; margin-bottom: 5px; align-items: center; min-height: 46px; }
-.ce-row .chord-badge { flex: 1; min-width: 0; height: 46px; border-radius: 10px; background: var(--surface-2); display: grid; place-items: center; font: 600 calc(var(--song-font, 15px) * 1.5) var(--font-chord); color: var(--chord); cursor: pointer; touch-action: manipulation; user-select: none; -webkit-user-select: none; white-space: nowrap; overflow: hidden; }
+.ce-row { display: flex; flex-wrap: wrap; gap: 5px; margin-bottom: 5px; align-items: center; min-height: 46px; }
+.ce-row .chord-badge { flex: 1 0 auto; height: 46px; border-radius: 10px; background: var(--surface-2); display: grid; place-items: center; padding: 0 8px; min-width: max-content; font: 600 calc(var(--song-font, 15px) * 1.5) var(--font-chord); color: var(--chord); cursor: pointer; touch-action: manipulation; user-select: none; -webkit-user-select: none; white-space: nowrap; }
 .ce-row .chord-badge.ce-selected { box-shadow: inset 0 0 0 2px var(--chord); background: var(--chord-dim); }
 .ce-add-chord { flex: 0 0 44px; height: 46px; border-radius: 10px; border: 1.5px dashed var(--line); background: none; color: var(--muted); font-size: 22px; cursor: pointer; }
 .ce-row-rep { flex: 0 0 auto; height: 30px; padding: 0 8px; border: 0; border-radius: 8px; background: var(--surface-2); color: var(--muted); font: 700 15px var(--font-chord); cursor: pointer; }
@@ -458,3 +466,67 @@ body.inline-editing .ie-line-wrap:active { background: var(--surface); }
 }
 
 .sync-status { position: fixed; top: calc(var(--header-height, 60px) + 4px); left: 50%; transform: translateX(-50%); z-index: 300; background: var(--surface); color: var(--muted); border: 1px solid var(--line); padding: 6px 14px; border-radius: 20px; font: 600 12px var(--font-ui); transition: opacity .3s; pointer-events: none; box-shadow: var(--shadow); white-space: nowrap; }
+
+/* ── НАСТРОЙКИ: выбранный вариант виден сразу ── */
+.settings-theme-btn, .settings-view-btn, .settings-notation-btn, .settings-density-btn {
+  position: relative; transition: background .22s ease, color .22s ease, box-shadow .22s ease, transform .12s ease;
+}
+.settings-theme-btn:active, .settings-view-btn:active, .settings-notation-btn:active, .settings-density-btn:active { transform: scale(.96); }
+.ctrl-btn[aria-pressed="true"] { background: var(--chord-dim); color: var(--chord); box-shadow: inset 0 0 0 2px var(--chord); font-weight: 700; }
+.ctrl-btn[aria-pressed="true"]::before { content: ''; width: 7px; height: 7px; border-radius: 50%; background: var(--chord); margin-right: 2px; flex-shrink: 0; }
+.settings-current { font-size: 12px; color: var(--muted); font-weight: 500; margin-left: 6px; }
+.settings-current b { color: var(--text); font-weight: 600; }
+
+/* ── ОБНОВЛЕНИЕ ЖЕСТОМ ── */
+.ptr-indicator { display: none; }
+.ptr-indicator.ptr-visible { display: grid; }
+.ptr-indicator .ico { width: 20px; height: 20px; transition: transform .2s; }
+.ptr-indicator.ptr-ready .ico { transform: rotate(180deg); }
+.ptr-indicator.ptr-loading .ico { animation: ptrSpin .8s linear infinite; }
+@keyframes ptrSpin { to { transform: rotate(360deg); } }
+
+/* ── ЧИТАЕМОСТЬ: части песни в рамке (все режимы), белые аккорды на «Сцене» ── */
+.song-card-block, .chords-only-block, .ce-block {
+  border: 1.5px solid color-mix(in srgb, var(--sec) 55%, transparent);
+  background: color-mix(in srgb, var(--sec) 6%, transparent);
+  border-radius: 16px; padding: 10px 12px 12px; margin-bottom: 12px;
+}
+.song-card-block .block-header-row, .chords-only-block .chords-only-header { margin-bottom: 6px; }
+.chords-only-block.is-repeat.block-collapsed { background: color-mix(in srgb, var(--sec) 4%, transparent); border-style: dashed; padding: 8px 6px 8px 12px; border-radius: 14px; }
+body.theme-day .song-card-block, body.theme-day .chords-only-block, body.theme-day .ce-block {
+  border-color: color-mix(in srgb, var(--sec) 45%, transparent); background: color-mix(in srgb, var(--sec) 4%, #fff);
+}
+body.theme-bw .song-card-block, body.theme-bw .chords-only-block, body.theme-bw .ce-block { border-color: rgba(255,255,255,.55); background: transparent; }
+/* «Сцена» (тёмная тема), режим «Только аккорды»: аккорды белые — максимальный контраст в зале */
+body:not(.theme-day):not(.theme-bw) .song-content.mode-chords .cs-bar { color: #FFFFFF; }
+body:not(.theme-day):not(.theme-bw) .song-content.mode-chords .cs-bar sub { color: rgba(255,255,255,.82); }
+/* тактовые черты внутри рамки — чуть заметнее */
+.chords-only-block .cs-bar { border-left-color: color-mix(in srgb, var(--sec) 30%, var(--line)); }
+@media print { .song-card-block, .chords-only-block { border-color: #999 !important; background: transparent !important; } }
+
+/* ── РЕЖИМ «ТОЛЬКО АККОРДЫ»: белые аккорды в тёмной теме и обводка блоков ── */
+:root { --co-chord: #FFFFFF; --co-block-bg: rgba(255,255,255,.035); --co-block-border: rgba(255,255,255,.16); --co-bar-line: rgba(255,255,255,.18); }
+body.theme-day { --co-chord: var(--chord); --co-block-bg: #FFFFFF; --co-block-border: #D3D9E3; --co-bar-line: #DDE2EA; }
+body.theme-bw { --co-chord: #FFFFFF; --co-block-bg: #000000; --co-block-border: #6A6A6A; --co-bar-line: #4A4A4A; }
+.song-content.mode-chords .chords-only-block {
+  background: var(--co-block-bg);
+  border: 1.5px solid var(--co-block-border);                                        /* запасной вариант для старых WebView */
+  border: 1.5px solid color-mix(in srgb, var(--sec) 40%, var(--co-block-border));
+  border-radius: 16px; padding: 10px 12px 12px; margin-bottom: 12px;
+}
+.song-content.mode-chords .chords-only-block.is-repeat.block-collapsed { border-style: dashed; padding: 9px 8px 9px 12px; background: var(--co-block-bg); }
+.song-content.mode-chords .cs-bar { color: var(--co-chord); border-left-color: var(--co-bar-line); }
+.song-content.mode-chords .chords-only-header { margin-bottom: 6px; }
+/* редактор квадратов — те же цвета, чтобы правка выглядела как результат */
+body.inline-editing .ce-block .ce-row .chord-badge { color: var(--co-chord); }
+.ce-square { border: 1.5px solid var(--co-block-border); border: 1.5px solid color-mix(in srgb, var(--sec) 35%, var(--co-block-border)); }
+.ce-row .chord-badge.ce-selected { color: var(--co-chord); }
+
+/* ── КОМПАКТНЫЕ ТАКТЫ: ширина по аккорду, а не на весь экран ── */
+.cs-square { justify-content: flex-start; }
+.cs-rows { flex: 0 1 auto; max-width: 100%; min-width: 0; }
+.cs-row { grid-template-columns: repeat(var(--cols, 4), max-content); justify-content: start; }
+.cs-bar { min-width: 2.15em; padding: 3px .5em 3px .45em; box-sizing: border-box; }
+.cs-bar:first-child { padding-left: 2px; }
+.cs-rep { min-width: 0; text-align: left; margin-left: 2px; }
+.cs-row-rep { right: -4px; }

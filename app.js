@@ -492,7 +492,7 @@ function applySongViewMode() {
   el.classList.remove('mode-both', 'mode-words', 'mode-chords');
   el.classList.add('mode-' + getSongEffectiveMode(currentSongId));
 }
-function applyGlobalViewMode() { applySongViewMode(); }
+function applyGlobalViewMode() { applySongViewMode(); if (typeof scheduleFit === 'function') scheduleFit(); }
 function setGlobalViewMode(mode) {
   globalViewMode = mode;
   LS.set(GLOBAL_VIEW_KEY, mode);
@@ -516,7 +516,7 @@ function setSongViewMode(mode) {
   if (mode === globalViewMode || mode === 'inherit') delete songViewMap[currentSongId]; else songViewMap[currentSongId] = mode;
   LS.set(SONG_VIEW_KEY, songViewMap);
   applySongViewMode(); updateSongViewModeBtn();
-  if (_inlineEditActive) _ieRedraw();
+  if (_inlineEditActive) _ieRedraw(); else scheduleFit();
 }
 function cycleSongViewMode() {
   const cur = songViewMap[currentSongId] || 'inherit';
@@ -829,6 +829,45 @@ function splitBlocksToColumns(blocks, renderBlock) {
 // ═══════════════════════════════════════════
 //  RENDER — ТОЛЬКО АККОРДЫ (квадраты, форма песни)
 // ═══════════════════════════════════════════
+// ═══════════════════════════════════════════
+//  ПОДГОНКА АККОРДОВ ПО ШИРИНЕ
+//  Аккорды НИКОГДА не обрезаются многоточием. Если строка квадрата не влезает
+//  в текущем размере (длинные F#maj7/A# после смены ♯/♭ или тональности),
+//  весь режим «Аккорды» песни равномерно уменьшается (--fit), но не меньше
+//  FIT_MIN от выбранного размера; если и этого мало — строка переносится.
+// ═══════════════════════════════════════════
+const FIT_MIN = 0.75;
+function fitChords() {
+  const inner = $('song-content-inner'), area = $('song-content-area');
+  if (!inner || !area || !area.classList.contains('mode-chords')) return 1;
+  // Подгонка ПО БЛОКАМ: одна строка с очень длинными аккордами уменьшает
+  // только свой блок, а не всю песню.
+  let minScale = 1;
+  inner.querySelectorAll('.chords-only-block').forEach(block => {
+    block.style.setProperty('--fit', '1');
+    const rows = [...block.querySelectorAll('.cs-row')];
+    rows.forEach(r => r.classList.remove('cs-wrap'));
+    let scale = 1;
+    for (const r of rows) {
+      const avail = r.clientWidth, need = r.scrollWidth;
+      if (avail > 0 && need > avail + 1) scale = Math.min(scale, avail / need);
+    }
+    scale = Math.max(FIT_MIN, Math.floor(scale * 100) / 100);
+    block.style.setProperty('--fit', String(scale));
+    if (scale < 1) rows.forEach(r => { if (r.clientWidth > 0 && r.scrollWidth > r.clientWidth + 1) r.classList.add('cs-wrap'); });
+    block.dataset.fit = String(scale);
+    minScale = Math.min(minScale, scale);
+  });
+  inner.dataset.fit = String(minScale);
+  return minScale;
+}
+let _fitRaf = 0;
+function scheduleFit() {
+  cancelAnimationFrame(_fitRaf);
+  _fitRaf = requestAnimationFrame(() => { fitChords(); });
+}
+if (document.fonts && document.fonts.ready) document.fonts.ready.then(scheduleFit).catch(() => {});
+
 function partWeight(a) { return Math.max(1, CE.expandSquares(a.squares).length); }
 // Карта песни: полоса, где ширина части = число тактов × повторы
 function songMapHtml(items, analysis, editable, custom) {
@@ -977,6 +1016,7 @@ function showPage(name) {
   currentPage = name;
   const token = ++_pageSwitchToken;
   closeMenu();
+  if (typeof PTR !== 'undefined') PTR.reset();
   const doSwitch = () => {
     if (token !== _pageSwitchToken) return;
     document.querySelectorAll('.page').forEach(p => p.classList.remove('active', 'slide-back', 'slide-out-right', 'slide-out-left'));
@@ -1003,6 +1043,7 @@ function applyPageUI(name) {
   if (isList) $('header-actions').innerHTML = '';
   if (name !== 'song-view') $('perf-nav-buttons').classList.remove('show');
   document.querySelectorAll('.nav-btn[data-page]').forEach(b => b.classList.toggle('active', b.dataset.page === name));
+  if (name === 'song-view') scheduleFit(); // экран стал видимым — теперь ширину можно измерить
   if (name === 'songs') { $('header-title').textContent = 'Песни'; renderSongs($('search-input').value); }
   else if (name === 'setlists') { $('header-title').textContent = 'Сет-листы'; renderSetlists(); }
   updateHeaderHeight();
@@ -1135,6 +1176,7 @@ function renderSongView(song, animDir) {
   }
   applySongViewMode();
   updateSongViewModeBtn();
+  scheduleFit();
 
   const transposeBy = d => {
     if (_inlineEditActive) { showToast('Транспонирование недоступно во время редактирования'); return; }
@@ -1218,6 +1260,7 @@ function initSongContentClicks(song) {
       invalidateSongCache(song.id);
       const block = btn.closest('.song-card-block, .chords-only-block');
       if (block) block.classList.toggle('block-collapsed');
+      scheduleFit();
       return;
     }
     if (e.target.closest('[data-arr-edit]')) { openArrangementEditor(song); return; }
@@ -1226,6 +1269,7 @@ function initSongContentClicks(song) {
       const target = $('co-item-' + chip.dataset.gotoItem);
       if (target) {
         target.classList.remove('block-collapsed');
+        scheduleFit();
         const top = target.getBoundingClientRect().top + window.scrollY - ($('main-header').offsetHeight + 8);
         window.scrollTo({ top, behavior: 'smooth' });
       }
@@ -2143,6 +2187,7 @@ let fontSizeIdx = Math.max(0, Math.min(FONT_PCTS.length - 1, LS.get(FONT_KEY, 2)
 function applyFontSize() {
   document.documentElement.style.setProperty('--song-font', +(BASE_FONT * FONT_PCTS[fontSizeIdx] / 100).toFixed(1) + 'px');
   const sl = $('settings-font-label'); if (sl) sl.textContent = FONT_PCTS[fontSizeIdx] + '%';
+  if (typeof scheduleFit === 'function') scheduleFit();
 }
 function changeFontSize(dir) { fontSizeIdx = Math.max(0, Math.min(FONT_PCTS.length - 1, fontSizeIdx + dir)); LS.set(FONT_KEY, fontSizeIdx); applyFontSize(); }
 const DENSITY_KEY = 'cb_density';
@@ -2212,13 +2257,20 @@ function renderPickerList(filter) {
 // ═══════════════════════════════════════════
 //  SETTINGS
 // ═══════════════════════════════════════════
+// FIX: подсветка выбранного варианта ссылалась на несуществующий цвет — выбор был не виден
 function markActive(sel, attr, val) {
   document.querySelectorAll(sel).forEach(b => {
     const on = b.dataset[attr] === val;
-    b.style.borderColor = on ? 'var(--primary)' : ''; b.style.color = on ? 'var(--primary)' : '';
+    b.style.borderColor = ''; b.style.color = '';
     b.setAttribute('aria-pressed', on ? 'true' : 'false');
   });
 }
+const SETTING_NAMES = {
+  theme: { stage: 'Сцена', day: 'День', bw: 'Контраст' },
+  mode: { both: 'слова и аккорды', words: 'только слова', chords: 'только аккорды' },
+  notation: { asis: 'как введено', sharp: 'диезы ♯', flat: 'бемоли ♭' },
+  density: { normal: 'обычная', compact: 'компактная' },
+};
 function updateSettingsUI() {
   applyFontSize();
   markActive('.settings-theme-btn', 'theme', currentTheme());
@@ -2229,15 +2281,16 @@ function updateSettingsUI() {
 $('settings-nav-btn').addEventListener('click', () => { updateSettingsUI(); openOverlay('overlay-settings'); checkAdmin().catch(() => {}); });
 $('settings-font-down').addEventListener('click', () => { changeFontSize(-1); updateSettingsUI(); });
 $('settings-font-up').addEventListener('click', () => { changeFontSize(1); updateSettingsUI(); });
-document.querySelectorAll('.settings-theme-btn').forEach(b => b.addEventListener('click', () => setTheme(b.dataset.theme)));
-document.querySelectorAll('.settings-view-btn').forEach(b => b.addEventListener('click', () => { setGlobalViewMode(b.dataset.mode); updateSettingsUI(); showToast(GLOBAL_VIEW_TITLES[globalViewMode]); }));
+document.querySelectorAll('.settings-theme-btn').forEach(b => b.addEventListener('click', () => { setTheme(b.dataset.theme); showToast('Тема: ' + SETTING_NAMES.theme[b.dataset.theme]); }));
+document.querySelectorAll('.settings-view-btn').forEach(b => b.addEventListener('click', () => { setGlobalViewMode(b.dataset.mode); updateSettingsUI(); showToast('По умолчанию: ' + SETTING_NAMES.mode[globalViewMode]); }));
 document.querySelectorAll('.settings-notation-btn').forEach(b => b.addEventListener('click', () => {
   appSettings.notation = b.dataset.notation; saveSettings();
   _renderCache.clear(); VIRTUAL.bump();
   updateSettingsUI();
   if (currentPage === 'songs') renderSongs($('search-input').value);
+  showToast('Аккорды: ' + SETTING_NAMES.notation[appSettings.notation]);
 }));
-document.querySelectorAll('.settings-density-btn').forEach(b => b.addEventListener('click', () => { densityMode = b.dataset.density; LS.set(DENSITY_KEY, densityMode); applyDensityMode(); updateSettingsUI(); }));
+document.querySelectorAll('.settings-density-btn').forEach(b => b.addEventListener('click', () => { densityMode = b.dataset.density; LS.set(DENSITY_KEY, densityMode); applyDensityMode(); updateSettingsUI(); showToast('Плотность: ' + SETTING_NAMES.density[densityMode]); }));
 $('settings-tuner-btn').addEventListener('click', () => { closeOverlay('overlay-settings'); openTuner(); });
 document.querySelectorAll('.sort-chip').forEach(chip => {
   chip.classList.toggle('active', chip.dataset.sort === _sortMode);
@@ -2271,38 +2324,62 @@ window.addEventListener('resize', () => {
   clearTimeout(_resizeTimer);
   _resizeTimer = setTimeout(() => {
     updateHeaderHeight();
+    scheduleFit();
     if (currentPage === 'song-view' && currentSongId && !_inlineEditActive) { const s = songsCache.find(x => x.id === currentSongId); if (s) renderSongView(s); }
   }, 200);
 });
 
-// Pull-to-refresh на списках
-(function initPullToRefresh() {
-  const TH = 70, ind = $('ptr-indicator');
-  let startY = 0, pulling = false, busy = false;
-  const setPos = dy => { ind.style.transform = `translateX(-50%) translateY(${Math.min(dy, TH + 20) - 80}px)`; };
-  const reset = () => { ind.classList.remove('ptr-visible', 'ptr-ready'); ind.textContent = '↓'; setPos(0); pulling = false; };
+// ═══════════════════════════════════════════
+//  ОБНОВЛЕНИЕ ЖЕСТОМ (потянуть список вниз)
+//  FIX: индикатор раньше прятался только после ответа сервера — при медленной
+//  сети он «зависал» на экране, в том числе на других страницах.
+//  Теперь: жёсткий таймаут, сброс при переходе на другую страницу и при
+//  сворачивании приложения; индикатор вне жеста скрыт полностью (display:none).
+// ═══════════════════════════════════════════
+const PTR = (function () {
+  const TH = 70, MAX_WAIT = (window.CB_CONFIG && window.CB_CONFIG.ptrMaxWait) || 10000, ind = $('ptr-indicator');
+  ind.innerHTML = '<svg class="ico"><use href="#i-down"/></svg>';
+  let startY = 0, pulling = false, busy = false, token = 0;
+  const setPos = dy => { ind.style.transform = `translateX(-50%) translateY(${Math.min(dy, TH + 20) - 60}px)`; };
+  function reset() {
+    token++; pulling = false; busy = false;
+    ind.classList.remove('ptr-visible', 'ptr-ready', 'ptr-loading');
+    ind.innerHTML = '<svg class="ico"><use href="#i-down"/></svg>';
+    setPos(0);
+  }
+  async function refresh() {
+    const my = ++token; busy = true; pulling = false;
+    ind.classList.remove('ptr-ready'); ind.classList.add('ptr-visible', 'ptr-loading');
+    ind.innerHTML = '<svg class="ico"><use href="#i-sync"/></svg>';
+    ind.style.transform = 'translateX(-50%) translateY(0px)';
+    const work = (async () => { await pull(); await checkPendingSongFromBot(); })().catch(e => console.warn('refresh', e));
+    const timeout = new Promise(r => setTimeout(() => r('timeout'), MAX_WAIT));
+    const res = await Promise.race([work.then(() => 'ok'), timeout]);
+    if (my !== token) return; // уже сброшен (ушли со страницы и т.п.)
+    if (res === 'timeout') showToast('Сервер отвечает долго — обновим в фоне');
+    reset();
+  }
   document.addEventListener('touchstart', e => {
-    if (busy || !['songs', 'setlists'].includes(currentPage) || document.querySelector('.overlay.open') || window.scrollY > 4) return;
+    if (busy || e.touches.length !== 1 || !['songs', 'setlists'].includes(currentPage) || document.querySelector('.overlay.open, .confirm-dialog-overlay') || window.scrollY > 2) return;
     startY = e.touches[0].clientY; pulling = true;
   }, { passive: true });
   document.addEventListener('touchmove', e => {
     if (!pulling) return;
     const dy = e.touches[0].clientY - startY;
-    if (dy <= 0 || window.scrollY > 4) { reset(); return; }
+    if (dy <= 0 || window.scrollY > 2) { reset(); return; }
     ind.classList.add('ptr-visible'); setPos(dy);
     const ready = dy >= TH;
     if (ready && !ind.classList.contains('ptr-ready') && navigator.vibrate) navigator.vibrate(8);
-    ind.classList.toggle('ptr-ready', ready); ind.textContent = ready ? '↑' : '↓';
+    ind.classList.toggle('ptr-ready', ready);
   }, { passive: true });
-  document.addEventListener('touchend', async e => {
-    if (!pulling) return;
+  document.addEventListener('touchend', e => {
+    if (!pulling) { if (!busy) reset(); return; }
     const dy = e.changedTouches[0].clientY - startY;
-    if (dy < TH) { reset(); return; }
-    pulling = false; busy = true; ind.textContent = '↻';
-    try { await pull(); await checkPendingSongFromBot(); } catch (err) { console.warn(err); }
-    ind.textContent = '✓'; setTimeout(() => { reset(); busy = false; }, 400);
+    if (dy >= TH && ['songs', 'setlists'].includes(currentPage)) refresh(); else reset();
   }, { passive: true });
-  document.addEventListener('touchcancel', () => { if (pulling) reset(); }, { passive: true });
+  document.addEventListener('touchcancel', () => { if (!busy) reset(); }, { passive: true });
+  document.addEventListener('visibilitychange', () => { if (document.hidden) reset(); });
+  return { reset, refresh, get busy() { return busy; } };
 })();
 
 document.addEventListener('keydown', e => {
