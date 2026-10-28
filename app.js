@@ -482,9 +482,34 @@ const SONG_VIEW_MODES = ['inherit', 'both', 'words', 'chords'];
 const SONG_VIEW_LABELS = { inherit: 'Авто', both: 'Слова+♪', words: 'Слова', chords: 'Аккорды' };
 const SONG_VIEW_TITLES = { inherit: 'Как глобально', both: 'Слова + аккорды', words: 'Только слова', chords: 'Только аккорды' };
 
+// Песня без слов (только аккорды) по умолчанию открывается в режиме «Аккорды»
+const _wordsCache = new Map();
+function songHasWords(song) {
+  if (!song) return true;
+  if (_wordsCache.has(song.id)) return _wordsCache.get(song.id);
+  const has = parseSong(song.lyrics, 0).some(b => b.lines.some(l => CE.parseLine(l).lyric));
+  _wordsCache.set(song.id, has);
+  return has;
+}
 function getSongEffectiveMode(songId) {
   const m = songId && songViewMap[songId];
-  return !m || m === 'inherit' ? globalViewMode : m;
+  if (m && m !== 'inherit') return m;
+  const song = songId && songsCache.find(s => s.id === songId);
+  if (song && !songHasWords(song)) return 'chords';
+  return globalViewMode;
+}
+const CHART_KEY = 'cb_chart_view';
+let chartView = LS.get(CHART_KEY, 'full') === 'short' ? 'short' : 'full';
+function applyChartView() {
+  const el = $('song-content-area'); if (!el) return;
+  el.classList.toggle('chart-short', chartView === 'short');
+  el.querySelectorAll('[data-chart]').forEach(b => { const on = b.dataset.chart === chartView; b.classList.toggle('on', on); b.setAttribute('aria-pressed', on ? 'true' : 'false'); });
+}
+function setChartView(v) {
+  chartView = v === 'short' ? 'short' : 'full';
+  LS.set(CHART_KEY, chartView);
+  applyChartView();
+  if (typeof scheduleFit === 'function') scheduleFit();
 }
 function applySongViewMode() {
   const el = $('song-content-area');
@@ -513,7 +538,9 @@ function updateSongViewModeBtn() {
 // Сегмент «Слова / Оба / Аккорды»: выбор для песни; совпадает с глобальным — запись не храним
 function setSongViewMode(mode) {
   if (!SONG_VIEW_MODES.includes(mode)) return;
-  if (mode === globalViewMode || mode === 'inherit') delete songViewMap[currentSongId]; else songViewMap[currentSongId] = mode;
+  const song = songsCache.find(s => s.id === currentSongId);
+  const autoMode = song && !songHasWords(song) ? 'chords' : globalViewMode;
+  if (mode === autoMode || mode === 'inherit') delete songViewMap[currentSongId]; else songViewMap[currentSongId] = mode;
   LS.set(SONG_VIEW_KEY, songViewMap);
   applySongViewMode(); updateSongViewModeBtn();
   if (_inlineEditActive) _ieRedraw(); else scheduleFit();
@@ -546,7 +573,7 @@ const transposeKey = transposeChord;
 // ═══════════════════════════════════════════
 function detectKeyFromLyrics(lyrics) {
   if (!lyrics) return null;
-  const ch = [...String(lyrics).matchAll(/\[([^\]]+)\]/g)].map(m => m[1].trim()).filter(c => CE.isChord(c));
+  const ch = [...CE.normalizeLyrics(lyrics).matchAll(/\[([^\]]+)\]/g)].map(m => m[1].trim()).filter(c => CE.isChord(c));
   if (!ch.length) return null;
   const nc = new Array(12).fill(0);
   for (const c of ch) {
@@ -709,6 +736,8 @@ function parseSong(rawLyrics, transpose, notation) {
       if (obj && (obj.structure || obj.sections || obj.lyrics)) lyrics = convertToLyrics(obj);
     } catch {}
   }
+  // Аккорды строкой без скобок («Am F C G x4») и метки без скобок («Припев:») понимаются так же
+  lyrics = CE.normalizeLyrics(lyrics);
   const lines = transposeLyrics(lyrics, transpose || 0, notation).split('\n');
   const blocks = [];
   let current = { label: '', lines: [], repeat: 1 };
@@ -870,11 +899,12 @@ if (document.fonts && document.fonts.ready) document.fonts.ready.then(scheduleFi
 
 function partWeight(a) { return Math.max(1, CE.expandSquares(a.squares).length); }
 // Карта песни: полоса, где ширина части = число тактов × повторы
-function songMapHtml(items, analysis, editable, custom) {
+function songMapHtml(items, analysis, editable, custom, withChart) {
   if (!items.length) return '';
   const seg = items.map(it => { const a = analysis[it.bi]; return { w: partWeight(a) * it.repeat, c: getBlockColor(a.label, it.bi), label: (a.label || '—') + (it.repeat > 1 ? ' ×' + it.repeat : '') }; });
   return `<div class="cs-map">
     ${editable ? `<div class="cs-map-head"><span class="cs-map-title">Порядок${custom ? ' <span class="cs-custom">свой</span>' : ''}</span>
+      ${withChart ? `<div class="cs-view-seg" role="group" aria-label="Вид"><button data-chart="full">Подробно</button><button data-chart="short">Кратко</button></div>` : ''}
       <button class="cs-map-edit" data-arr-edit aria-label="Изменить порядок песни"><svg class="ico"><use href="#i-edit"/></svg>Изменить</button></div>` : ''}
     <div class="cs-map-bar">${seg.map((x, i) => `<i data-goto-item="${i}" style="flex:${x.w};--c:${x.c}" title="${escapeHtml(x.label)}"></i>`).join('')}</div>
     <div class="cs-map-labels">${seg.map((x, i) => `<span data-goto-item="${i}" style="flex:${x.w}">${escapeHtml(x.label)}</span>`).join('')}</div></div>`;
@@ -886,6 +916,12 @@ function renderChordsOnly(song, blocks, transpose, notation) {
   const items = CE.resolveArrangement(song.arrangement, blocks, analysis);
   const custom = !!(song.arrangement && song.arrangement.length) && !CE.isDefaultArrangement(song.arrangement, blocks, analysis);
   const shown = new Map(); // sig → label первого показа
+  const chart = CE.songChart(analysis, items);
+  // буквы у квадратов в подробном виде — только если в песне есть повторяющиеся квадраты
+  const showLetters = chart.patterns.length >= 2 && chart.patterns.some(p => p.uses > 1);
+  const letters = showLetters ? chart.letters : null;
+  const colors = chart.colors;
+  const chartHtml = chart.patterns.length >= 2 ? renderChart(chart) : '';
   const body = items.map((it, i) => {
     const a = analysis[it.bi];
     if (!a || !a.squares.length) return '';
@@ -900,9 +936,22 @@ function renderChordsOnly(song, blocks, transpose, notation) {
     const label = `<span class="chords-only-label">${escapeHtml(a.label || 'Без метки')}</span>`;
     return `<div class="chords-only-block${isRepeat ? ' is-repeat' : ''}${collapsed ? ' block-collapsed' : ''}" id="co-item-${i}" data-orig-bi="${it.bi}" style="--block-color:${color}">
       <div class="chords-only-header">${label}${times}${note}${manual}<button class="block-collapse-btn" data-ck="a${i}" aria-label="Свернуть часть">▼</button></div>
-      <div class="chords-only-rows-wrap">${CE.squaresToHtml(a.squares)}</div></div>`;
+      <div class="chords-only-rows-wrap">${CE.squaresToHtml(a.squares, { letters, colors })}</div></div>`;
   }).join('');
-  return songMapHtml(items, analysis, true, custom) + body;
+  return songMapHtml(items, analysis, true, custom, !!chartHtml) + chartHtml + `<div class="cs-detail">${body}</div>`;
+}
+// Краткий вид: все разные квадраты (A, B, C…) и форма песни буквами — всё на одном экране
+function renderChart(chart) {
+  if (!chart.patterns.length) return '';
+  const pats = chart.patterns.map(p => `<div class="cs-pattern"><span class="cs-letter cs-letter-big" data-c="${p.color}" title="Квадрат ${p.letter}">${p.letter}</span>
+      <div class="cs-pattern-body">${CE.squaresToHtml([p.square])}</div></div>`).join('');
+  const rows = chart.sections.map(sec => `<button class="cs-form-row" data-goto-item="${sec.item}" style="--block-color:${getBlockColor(sec.label, sec.bi)}">
+      <span class="cs-form-label">${escapeHtml(sec.label || 'Без метки')}${sec.repeat > 1 ? ` <b>×${sec.repeat}</b>` : ''}</span>
+      <span class="cs-form-seq">${sec.seq.map(x => `<span class="cs-seq-chip" data-c="${x.color}">${x.letter}${x.repeat > 1 ? `<b>×${x.repeat}</b>` : ''}</span>`).join('')}</span></button>`).join('');
+  return `<div class="cs-chart"><div class="chords-only-block cs-chart-block" style="--block-color:var(--muted)">
+      <div class="chords-only-header"><span class="chords-only-label">Квадраты песни</span></div>
+      <div class="chords-only-rows-wrap">${pats}</div></div>
+    <div class="cs-form-list">${rows}</div></div>`;
 }
 
 const _renderCache = new Map();
@@ -920,6 +969,7 @@ function renderSongContent(song, transpose) {
 function invalidateSongCache(songId) {
   for (const key of [..._renderCache.keys()]) if (key.startsWith(songId + ':')) _renderCache.delete(key);
   _detectedKeyCache.delete(songId);
+  if (typeof _wordsCache !== 'undefined') _wordsCache.delete(songId);
 }
 
 // ═══════════════════════════════════════════
@@ -1176,6 +1226,7 @@ function renderSongView(song, animDir) {
   }
   applySongViewMode();
   updateSongViewModeBtn();
+  applyChartView();
   scheduleFit();
 
   const transposeBy = d => {
@@ -1264,8 +1315,11 @@ function initSongContentClicks(song) {
       return;
     }
     if (e.target.closest('[data-arr-edit]')) { openArrangementEditor(song); return; }
+    const cv = e.target.closest('[data-chart]');
+    if (cv) { setChartView(cv.dataset.chart); return; }
     const chip = e.target.closest('[data-goto-item]');
     if (chip) {
+      if (chartView === 'short') setChartView('full'); // переход к части — в подробном виде
       const target = $('co-item-' + chip.dataset.gotoItem);
       if (target) {
         target.classList.remove('block-collapsed');

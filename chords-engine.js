@@ -103,6 +103,36 @@
   // ─────────────────────── LINE PARSING ───────────────────────
   var LINE_REPEAT_RE = /^\(?\s*(?:[×xхX*]\s*(\d{1,2})|(\d{1,2})\s*(?:раз|раза|times|x|х|×))\s*\)?$/i;
 
+  // Строка «Am F C G x4» / «| Am | F |» без скобок → «[Am] [F] [C] [G] x4».
+  // null, если в строке есть хоть одно слово, не являющееся аккордом.
+  var BARE_REP_RE = /(?:^|\s)\(?\s*(?:[×xхX*]\s*\d{1,2}|\d{1,2}\s*(?:раз|раза|x|х|×))\s*\)?\s*$/i;
+  function bareChordLine(line) {
+    var t = String(line || '').trim();
+    if (!t || t.indexOf('[') !== -1) return null;
+    t = t.replace(/[|‖]/g, ' ').replace(/\s[-–—/]+(?=\s)/g, ' ').trim();
+    var rep = '';
+    var m = BARE_REP_RE.exec(t);
+    if (m) { rep = ' ' + m[0].trim().replace(/[()]/g, ''); t = t.slice(0, m.index).trim(); }
+    var toks = t.split(/\s+/).filter(Boolean);
+    if (!toks.length || !toks.every(isChord)) return null;
+    return toks.map(function (c) { return '[' + c + ']'; }).join(' ') + rep;
+  }
+  // Метка блока без скобок: «Припев:», «1 куплет», «Verse 2:» → «Припев», «1 куплет», «Verse 2»
+  var LABEL_WORDS_RE = new RegExp('^(?:\\d+\\s*[-.)]?\\s*)?(?:' + KNOWN_BLOCK_WORDS.map(function (w) { return w.replace(/-/g, '-?'); }).join('|') + ')(?:\\s*\\d+)?\\s*:?\\s*$', 'i');
+  function bareLabelLine(line) {
+    var t = String(line || '').trim();
+    if (!t || t.length > 30 || t.indexOf('[') !== -1 || !LABEL_WORDS_RE.test(t)) return null;
+    t = t.replace(/:\s*$/, '').trim();
+    return t.charAt(0).toUpperCase() + t.slice(1);
+  }
+  // Приводит текст песни к виду со скобками: аккордные строки и метки без скобок понимаются так же
+  function normalizeLyrics(text) {
+    return String(text || '').replace(/\r/g, '').split('\n').map(function (l) {
+      var lab = bareLabelLine(l); if (lab) return '[' + lab + ']';
+      var ch = bareChordLine(l); return ch === null ? l : ch;
+    }).join('\n');
+  }
+
   // Возвращает { chords: [...], repeat: n, lyric: '...' } для строки исходного текста.
   function parseLine(line) {
     var chords = [];
@@ -627,6 +657,45 @@
     duplicate: function (arr, i) { var a = clone(arr); if (a[i]) a.splice(i + 1, 0, clone(a[i])); return a; }
   };
 
+  // ─────────────────────── SONG CHART (краткий вид) ───────────────────────
+  // Разные квадраты песни получают буквы A, B, C… (по первому появлению),
+  // каждая часть — последовательность букв с повторами: «Куплет 1: A ×2 B».
+  function squareSig(sq) {
+    return sq.rows.map(function (r) { return r.chords.map(chordKey).join(' ') + (r.repeat > 1 ? '*' + r.repeat : ''); }).join('|');
+  }
+  // Номер квадрата римскими цифрами: 0 → I, 1 → II, 3 → IV, 8 → IX …
+  function romanName(i) {
+    var n = i + 1, out = '';
+    [[1000, 'M'], [900, 'CM'], [500, 'D'], [400, 'CD'], [100, 'C'], [90, 'XC'], [50, 'L'], [40, 'XL'], [10, 'X'], [9, 'IX'], [5, 'V'], [4, 'IV'], [1, 'I']]
+      .forEach(function (p) { while (n >= p[0]) { out += p[1]; n -= p[0]; } });
+    return out;
+  }
+  function songChart(analysis, items) {
+    var bySig = {}, colorBySig = {}, patterns = [];
+    function letterOf(sq) {
+      var k = squareSig(sq);
+      if (!bySig[k]) {
+        var idx = patterns.length;
+        bySig[k] = romanName(idx); colorBySig[k] = idx % 8;
+        patterns.push({ letter: bySig[k], color: idx % 8, sig: k, square: { repeat: 1, rows: clone(sq.rows) }, uses: 0 });
+      }
+      return bySig[k];
+    }
+    var sections = [];
+    (items || []).forEach(function (it, i) {
+      var a = analysis[it.bi]; if (!a || !a.squares.length) return;
+      var seq = [];
+      a.squares.forEach(function (sq) {
+        var L = letterOf(sq), last = seq[seq.length - 1];
+        patterns.forEach(function (p) { if (p.letter === L) p.uses += sq.repeat * (it.repeat || 1); });
+        if (last && last.letter === L) last.repeat += sq.repeat; else seq.push({ letter: L, repeat: sq.repeat });
+      });
+      seq.forEach(function (x) { x.color = patterns.filter(function (p) { return p.letter === x.letter; })[0].color; });
+      sections.push({ item: i, bi: it.bi, label: a.label || '', repeat: it.repeat || 1, seq: seq });
+    });
+    return { patterns: patterns, sections: sections, letters: bySig, colors: colorBySig };
+  }
+
   // ─────────────────────── EDITOR OPS (pure) ───────────────────────
   // Путь аккорда: {si, ri, ci}. Все операции возвращают новые квадраты.
   function rowAt(sq, si, ri) { return sq[si] && sq[si].rows[ri]; }
@@ -788,7 +857,8 @@
     return esc(m[1]) + '<sub>' + esc(m[2]) + '</sub>' + (m[3] ? esc(m[3]) : '');
   }
   // Квадрат = такты с тактовыми чертами; повтор — реприза и крупное ×N
-  function squaresToHtml(squares) {
+  function squaresToHtml(squares, opts) {
+    var letters = opts && opts.letters, colors = (opts && opts.colors) || {};
     return (squares || []).map(function (sq, si) {
       var cols = 1;
       sq.rows.forEach(function (r) { cols = Math.max(cols, r.chords.length); });
@@ -797,7 +867,9 @@
         return '<div class="cs-row">' + r.chords.map(function (c) { return '<span class="chord-badge cs-bar">' + chordHtml(c) + '</span>'; }).join('') +
           (r.repeat > 1 ? '<span class="cs-row-rep">×' + r.repeat + '</span>' : '') + '</div>';
       }).join('');
+      var sig = squareSig(sq), letter = letters ? letters[sig] : '';
       return '<div class="cs-square' + (multi ? ' cs-multi' : '') + (sq.repeat > 1 ? ' cs-repeated' : '') + '" data-si="' + si + '">' +
+        (letter ? '<span class="cs-letter" data-c="' + (colors[sig] != null ? colors[sig] : 0) + '" title="Квадрат ' + letter + '">' + letter + '</span>' : '') +
         '<div class="cs-rows" style="--cols:' + cols + '">' + rows + '</div>' +
         (sq.repeat > 1 ? '<div class="cs-rep">×' + sq.repeat + '</div>' : '') + '</div>';
     }).join('');
@@ -806,6 +878,8 @@
   return {
     CHORD_RE: CHORD_RE, NOTES_SHARP: NOTES_SHARP, NOTES_FLAT: NOTES_FLAT,
     isChord: isChord, isBlockLabel: isBlockLabel, normalizeNote: normalizeNote,
+    bareChordLine: bareChordLine, bareLabelLine: bareLabelLine, normalizeLyrics: normalizeLyrics,
+    squareSig: squareSig, songChart: songChart, romanName: romanName,
     transposeChord: transposeChord, chordKey: chordKey, chordEq: chordEq,
     parseLine: parseLine, blockSequence: blockSequence, compressKeys: compressKeys, splitRows: splitRows,
     analyzeBlock: analyzeBlock, analyzeSequence: analyzeSequence, squaresFromRows: squaresFromRows,

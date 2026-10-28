@@ -530,3 +530,52 @@ body.inline-editing .ce-block .ce-row .chord-badge { color: var(--co-chord); }
 .cs-bar:first-child { padding-left: 2px; }
 .cs-rep { min-width: 0; text-align: left; margin-left: 2px; }
 .cs-row-rep { right: -4px; }
+
+/* ── КРАТКИЙ ВИД: квадраты песни буквами ── */
+.cs-map-head { gap: 8px; }
+.cs-view-seg { display: flex; background: var(--surface); border-radius: 10px; padding: 2px; margin-left: auto; }
+.cs-view-seg button { border: 0; background: none; color: var(--muted); font: 600 12px var(--font-ui); padding: 5px 10px; border-radius: 8px; cursor: pointer; }
+.cs-view-seg button.on { background: var(--surface-2); color: var(--text); }
+.cs-chart { display: none; }
+.song-content.mode-chords.chart-short .cs-chart { display: block; }
+.song-content.mode-chords.chart-short .cs-detail { display: none; }
+.song-content:not(.mode-chords) .cs-chart, .song-content:not(.mode-chords) .cs-detail { display: none; }
+.song-content.mode-chords:not(.chart-short) .cs-detail { display: block; }
+.cs-pattern { display: flex; align-items: center; gap: 10px; padding: 3px 0; }
+.cs-pattern + .cs-pattern { border-top: 1px dashed var(--co-bar-line, var(--line)); padding-top: 7px; margin-top: 4px; }
+.cs-pattern-body { flex: 1; min-width: 0; }
+.cs-letter { flex-shrink: 0; align-self: center; min-width: 20px; height: 20px; padding: 0 5px; border-radius: 6px; display: grid; place-items: center;
+  font: 700 12px var(--font-ui); color: var(--muted); background: var(--surface-2); }
+.cs-letter-big { min-width: 30px; height: 30px; border-radius: 9px; font-size: 16px; color: var(--text); }
+.cs-form-list { display: flex; flex-direction: column; gap: 6px; margin-bottom: 14px; }
+.cs-form-row { display: flex; align-items: center; gap: 10px; width: 100%; text-align: left; cursor: pointer;
+  background: var(--co-block-bg, var(--surface)); border: 1.5px solid var(--co-block-border, var(--line)); border-left: 4px solid var(--block-color); border-radius: 12px; padding: 9px 12px; color: var(--text); font: 600 14px var(--font-ui); }
+.cs-form-label { flex: 1; min-width: 0; color: var(--block-color); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.cs-form-label b { color: var(--muted); font-weight: 700; }
+.cs-form-seq { display: flex; gap: 5px; flex-wrap: wrap; justify-content: flex-end; }
+.cs-seq-chip { font: 700 15px var(--font-ui); color: var(--text); background: var(--surface-2); border-radius: 8px; padding: 3px 8px; }
+.cs-seq-chip b { font: 700 14px var(--font-chord); color: var(--muted); margin-left: 3px; }
+
+/* ── НОМЕРА КВАДРАТОВ (I, II, III…): у каждого квадрата свой цвет ── */
+:root {
+  --sq0: #F2B84B; --sq1: #4FC3F7; --sq2: #F48FB1; --sq3: #AED581; --sq4: #FF8A65; --sq5: #B39DDB; --sq6: #4DD0E1; --sq7: #FFF176;
+  --sq-ink: #141821;
+}
+body.theme-day {
+  --sq0: #B26B00; --sq1: #0277BD; --sq2: #C2185B; --sq3: #558B2F; --sq4: #D84315; --sq5: #5E35B1; --sq6: #00838F; --sq7: #8D6E00;
+  --sq-ink: #FFFFFF;
+}
+.cs-letter[data-c], .cs-seq-chip[data-c] { --sqc: var(--sq0); background: var(--sqc); color: var(--sq-ink); }
+.cs-letter[data-c="1"], .cs-seq-chip[data-c="1"] { --sqc: var(--sq1); }
+.cs-letter[data-c="2"], .cs-seq-chip[data-c="2"] { --sqc: var(--sq2); }
+.cs-letter[data-c="3"], .cs-seq-chip[data-c="3"] { --sqc: var(--sq3); }
+.cs-letter[data-c="4"], .cs-seq-chip[data-c="4"] { --sqc: var(--sq4); }
+.cs-letter[data-c="5"], .cs-seq-chip[data-c="5"] { --sqc: var(--sq5); }
+.cs-letter[data-c="6"], .cs-seq-chip[data-c="6"] { --sqc: var(--sq6); }
+.cs-letter[data-c="7"], .cs-seq-chip[data-c="7"] { --sqc: var(--sq7); }
+.cs-letter { font-family: 'Georgia', 'Times New Roman', serif; font-weight: 700; font-size: 12px; letter-spacing: .02em; min-width: 22px; height: 22px; padding: 0 6px; }
+.cs-letter-big { font-size: 16px; min-width: 34px; height: 30px; padding: 0 8px; }
+.cs-seq-chip { font-family: 'Georgia', 'Times New Roman', serif; }
+.cs-seq-chip b { color: inherit; opacity: .75; font-family: var(--font-chord); }
+/* «Контраст»: цвета не нужны — белые значки с чёрной цифрой */
+body.theme-bw .cs-letter[data-c], body.theme-bw .cs-seq-chip[data-c] { background: #FFFFFF; color: #000000; }
