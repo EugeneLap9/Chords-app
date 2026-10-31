@@ -498,16 +498,29 @@ function getSongEffectiveMode(songId) {
   if (song && !songHasWords(song)) return 'chords';
   return globalViewMode;
 }
-const CHART_KEY = 'cb_chart_view';
-let chartView = LS.get(CHART_KEY, 'full') === 'short' ? 'short' : 'full';
+// Вид «Подробно / Кратко» — СВОЙ у каждой песни (по умолчанию «Подробно»).
+const CHART_MAP_KEY = 'cb_chart_view_map';
+const chartViewMap = LS.get(CHART_MAP_KEY, {}) || {};
+try { localStorage.removeItem('cb_chart_view'); } catch {} // старая общая настройка больше не используется
+let _chartTemp = null; // временный «Подробно» после тапа по части: { songId, v }
+function getChartView(songId) {
+  if (_chartTemp && _chartTemp.songId === songId) return _chartTemp.v;
+  return chartViewMap[songId] === 'short' ? 'short' : 'full';
+}
 function applyChartView() {
   const el = $('song-content-area'); if (!el) return;
-  el.classList.toggle('chart-short', chartView === 'short');
-  el.querySelectorAll('[data-chart]').forEach(b => { const on = b.dataset.chart === chartView; b.classList.toggle('on', on); b.setAttribute('aria-pressed', on ? 'true' : 'false'); });
+  const v = getChartView(currentSongId);
+  el.classList.toggle('chart-short', v === 'short');
+  el.querySelectorAll('[data-chart]').forEach(b => { const on = b.dataset.chart === v; b.classList.toggle('on', on); b.setAttribute('aria-pressed', on ? 'true' : 'false'); });
 }
-function setChartView(v) {
-  chartView = v === 'short' ? 'short' : 'full';
-  LS.set(CHART_KEY, chartView);
+// persist=false — только на экране сейчас (переход к части), выбор песни не меняется
+function setChartView(v, persist = true) {
+  v = v === 'short' ? 'short' : 'full';
+  if (persist) {
+    _chartTemp = null;
+    if (v === 'short') chartViewMap[currentSongId] = 'short'; else delete chartViewMap[currentSongId];
+    LS.set(CHART_MAP_KEY, chartViewMap);
+  } else _chartTemp = { songId: currentSongId, v };
   applyChartView();
   if (typeof scheduleFit === 'function') scheduleFit();
 }
@@ -604,8 +617,13 @@ function getSongKey(song) {
   const detected = detectKeyFromLyrics(song.lyrics);
   const userKey = CE.isChord(song.key) ? song.key : null;
   let k = detected || userKey || 'C';
-  // Am и C — одна гамма, алгоритм их не различит надёжно; уважаем выбор пользователя
-  if (detected && userKey && sameScale(detected, userKey)) k = userKey;
+  // Тональность, указанная пользователем, важнее алгоритма — если она правдоподобна:
+  // её тоническое трезвучие встречается в песне (так отсекаем «C» по умолчанию у старых импортов)
+  if (userKey) {
+    const tonic = CE.chordKey(userKey.replace(/^([A-H][#b]?m?).*$/, '$1'));
+    const used = lineChords(song.lyrics || '').map(c => CE.chordKey(c.replace(/^([A-H][#b]?(?:m(?!aj))?).*$/, '$1')));
+    if (used.includes(tonic) || (detected && sameScale(detected, userKey))) k = userKey;
+  }
   _detectedKeyCache.set(song.id, k);
   return k;
 }
@@ -901,7 +919,7 @@ function partWeight(a) { return Math.max(1, CE.expandSquares(a.squares).length);
 // Карта песни: полоса, где ширина части = число тактов × повторы
 function songMapHtml(items, analysis, editable, custom, withChart) {
   if (!items.length) return '';
-  const seg = items.map(it => { const a = analysis[it.bi]; return { w: partWeight(a) * it.repeat, c: getBlockColor(a.label, it.bi), label: (a.label || '—') + (it.repeat > 1 ? ' ×' + it.repeat : '') }; });
+  const seg = items.map(it => { const a = analysis[it.bi]; return { w: partWeight(a) * it.repeat, c: getBlockColor(a.label, it.bi), label: (a.label || (it.bi === 0 ? 'Начало' : '—')) + (it.repeat > 1 ? ' ×' + it.repeat : '') }; });
   return `<div class="cs-map">
     ${editable ? `<div class="cs-map-head"><span class="cs-map-title">Порядок${custom ? ' <span class="cs-custom">свой</span>' : ''}</span>
       ${withChart ? `<div class="cs-view-seg" role="group" aria-label="Вид"><button data-chart="full">Подробно</button><button data-chart="short">Кратко</button></div>` : ''}
@@ -933,12 +951,14 @@ function renderChordsOnly(song, blocks, transpose, notation) {
     const note = isRepeat ? `<span class="cs-repeat-note">как ${escapeHtml(firstLabel)}</span>` : '';
     const times = it.repeat > 1 ? `<span class="cs-times-badge">×${it.repeat}</span>` : '';
     const manual = a.manual ? '<span class="cs-manual-dot" title="Ручная раскладка">свои квадраты</span>' : '';
-    const label = `<span class="chords-only-label">${escapeHtml(a.label || 'Без метки')}</span>`;
+    const label = `<span class="chords-only-label">${escapeHtml(a.label || (a.bi === 0 ? 'Начало' : 'Без метки'))}</span>`;
     return `<div class="chords-only-block${isRepeat ? ' is-repeat' : ''}${collapsed ? ' block-collapsed' : ''}" id="co-item-${i}" data-orig-bi="${it.bi}" style="--block-color:${color}">
       <div class="chords-only-header">${label}${times}${note}${manual}<button class="block-collapse-btn" data-ck="a${i}" aria-label="Свернуть часть">▼</button></div>
       <div class="chords-only-rows-wrap">${CE.squaresToHtml(a.squares, { letters, colors })}</div></div>`;
   }).join('');
-  return songMapHtml(items, analysis, true, custom, !!chartHtml) + chartHtml + `<div class="cs-detail">${body}</div>`;
+  // Нет краткой схемы (меньше двух разных квадратов) — подробный вид показываем всегда,
+  // даже если раньше был выбран «Кратко»: иначе экран оставался пустым
+  return songMapHtml(items, analysis, true, custom, !!chartHtml) + chartHtml + `<div class="cs-detail${chartHtml ? '' : ' cs-detail-only'}">${body}</div>`;
 }
 // Краткий вид: все разные квадраты (A, B, C…) и форма песни буквами — всё на одном экране
 function renderChart(chart) {
@@ -1176,6 +1196,7 @@ function openSong(id, ctx) {
   currentSongId = song.id;
   transposeOffset = transposeMap[song.id] || 0;
   setlistContext = ctx || null;
+  _chartTemp = null;
   renderSongView(song);
   showPage('song-view');
 }
@@ -1319,7 +1340,7 @@ function initSongContentClicks(song) {
     if (cv) { setChartView(cv.dataset.chart); return; }
     const chip = e.target.closest('[data-goto-item]');
     if (chip) {
-      if (chartView === 'short') setChartView('full'); // переход к части — в подробном виде
+      if (getChartView(song.id) === 'short') setChartView('full', false); // переход к части — подробно, выбор песни не меняем
       const target = $('co-item-' + chip.dataset.gotoItem);
       if (target) {
         target.classList.remove('block-collapsed');

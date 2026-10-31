@@ -539,6 +539,7 @@ body.inline-editing .ce-block .ce-row .chord-badge { color: var(--co-chord); }
 .cs-chart { display: none; }
 .song-content.mode-chords.chart-short .cs-chart { display: block; }
 .song-content.mode-chords.chart-short .cs-detail { display: none; }
+.song-content.mode-chords.chart-short .cs-detail.cs-detail-only { display: block; }
 .song-content:not(.mode-chords) .cs-chart, .song-content:not(.mode-chords) .cs-detail { display: none; }
 .song-content.mode-chords:not(.chart-short) .cs-detail { display: block; }
 .cs-pattern { display: flex; align-items: center; gap: 10px; padding: 3px 0; }
