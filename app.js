@@ -75,7 +75,9 @@ function openMenu(anchor, items) {
   let top = r.bottom + 6;
   if (top + mh > window.innerHeight - 8) top = Math.max(8, r.top - mh - 6);
   m.style.top = top + 'px';
-  m.style.right = Math.max(8, window.innerWidth - r.right) + 'px';
+  // кнопка в левой половине экрана — меню растёт вправо, иначе влево (иначе обрезается краем)
+  if (r.left + r.width / 2 < window.innerWidth / 2) m.style.left = Math.max(8, Math.min(r.left, window.innerWidth - (m.offsetWidth || 230) - 8)) + 'px';
+  else m.style.right = Math.max(8, window.innerWidth - r.right) + 'px';
   const outside = e => { if (!m.contains(e.target) && !anchor.contains(e.target)) closeMenu(); };
   setTimeout(() => document.addEventListener('pointerdown', outside, true), 0);
   _activeMenu = { el: m, anchor, outside };
@@ -86,8 +88,16 @@ function openMenu(anchor, items) {
 //  INDEXEDDB
 // ═══════════════════════════════════════════
 const IDB = (() => {
-  const DB_NAME = 'chordbook_v1', DB_VER = 1;
+  const DB_VER = 1;
+  let DB_NAME = 'chordbook_v1';
   let _db = null;
+  // У каждой команды своя локальная база на устройстве (основная — прежняя chordbook_v1)
+  function useNamespace(teamId) {
+    const name = !teamId || teamId === 'main' ? 'chordbook_v1' : 'chordbook_t_' + teamId;
+    if (name === DB_NAME) return;
+    if (_db) { try { _db.close(); } catch {} _db = null; }
+    DB_NAME = name;
+  }
   function open() {
     if (_db) return Promise.resolve(_db);
     return new Promise((resolve, reject) => {
@@ -120,7 +130,7 @@ const IDB = (() => {
   }
   const withLower = s => ({ ...s, title_lower: (s.title || '').toLowerCase() });
   return {
-    open,
+    open, useNamespace,
     getAllSongs: () => open().then(() => reqP(store('songs').getAll())).then(r => r || []),
     putSong: s => open().then(() => reqP(store('songs', 'readwrite').put(withLower(s)))),
     deleteSong: id => open().then(() => reqP(store('songs', 'readwrite').delete(id))),
@@ -231,8 +241,21 @@ function getSongNotation(songId) {
 //    и пользователь выбирает, чью версию оставить.
 // ═══════════════════════════════════════════
 let _syncInterval = null;
-let _outbox = LS.get('cb_outbox', []) || [];
-let _cursor = LS.get('cb_cursor', 0) || 0;
+// ── Команды: текущая команда и её пространство на устройстве
+let currentTeam = LS.get('cb_team', null);
+let _teams = [];
+let _legacyOpen = true;
+let _noTeam = false;
+const teamKey = k => !currentTeam || currentTeam === 'main' ? k : k + '_' + currentTeam;
+const teamBase = () => currentTeam ? '/api/t/' + encodeURIComponent(currentTeam) : '/api';
+let _outbox = LS.get(teamKey('cb_outbox'), []) || [];
+let _cursor = LS.get(teamKey('cb_cursor'), 0) || 0;
+IDB.useNamespace(currentTeam);
+function loadTeamState() {
+  _outbox = LS.get(teamKey('cb_outbox'), []) || [];
+  _cursor = LS.get(teamKey('cb_cursor'), 0) || 0;
+  IDB.useNamespace(currentTeam);
+}
 let _syncState = 'idle'; // idle | ok | offline | noauth | error
 let _flushing = null;
 const _snap = { song: {}, setlist: {} }; // id → JSON последней синхронизированной версии
@@ -245,7 +268,7 @@ function fromServer(srv) {
   const { rev, serverTs, updatedBy, updatedByName, deleted, deletedAt, deletedBy, ...rest } = srv;
   return { ...rest, _rev: rev || 0, _serverTs: serverTs || 0, _by: updatedByName || '' };
 }
-function saveOutbox() { LS.set('cb_outbox', _outbox); }
+function saveOutbox() { LS.set(teamKey('cb_outbox'), _outbox); }
 function enqueue(kind, id, op) {
   _outbox = _outbox.filter(x => !(x.kind === kind && x.id === id));
   _outbox.push({ kind, id, op });
@@ -276,14 +299,14 @@ async function flush() {
       for (let i = 0; i < newSongs.length; i += 50) {
         const chunk = newSongs.slice(i, i + 50);
         const sent = new Map(chunk.map(s => [s.id, itemJson(s)]));
-        const r = await api('POST', '/api/batch', { songs: chunk.map(stripLocal) });
+        const r = await api('POST', teamBase() + '/batch', { songs: chunk.map(stripLocal) });
         if (!r.ok) { _syncState = r.status === 401 ? 'noauth' : 'error'; return false; }
         ((r.data && r.data.created) || []).forEach(c => { if (c && c.kind === 'song' && c.item && sent.has(c.item.id)) applyPushed('song', c.item, sent.get(c.item.id)); });
       }
     }
     for (const op of [..._outbox]) {
       if (!hasPending(op.kind, op.id)) continue;
-      const path = `/api/${KIND_PATH[op.kind]}/${encodeURIComponent(op.id)}`;
+      const path = `${teamBase()}/${KIND_PATH[op.kind]}/${encodeURIComponent(op.id)}`;
       if (op.op === 'del') {
         const r = await api('DELETE', path);
         if (!r.ok) { _syncState = r.status === 401 ? 'noauth' : 'error'; return false; }
@@ -362,8 +385,11 @@ async function pull() {
   if (!navigator.onLine) { _syncState = 'offline'; return false; }
   if (_outbox.length) await flush();
   const full = !_cursor;
-  const r = await api('GET', '/api/sync?since=' + (full ? 0 : Math.max(0, _cursor - 3000)));
-  if (!r.ok) { _syncState = r.status === 401 ? 'noauth' : r.status === 0 ? 'offline' : 'error'; return false; }
+  const r = await api('GET', teamBase() + '/sync?since=' + (full ? 0 : Math.max(0, _cursor - 3000)));
+  if (!r.ok) {
+    _syncState = r.status === 401 ? 'noauth' : r.status === 403 ? 'noteam' : r.status === 0 ? 'offline' : 'error';
+    return false;
+  }
   let changed = false;
   for (const kind of ['song', 'setlist']) {
     const incoming = (kind === 'song' ? r.data.songs : r.data.setlists) || [];
@@ -399,7 +425,7 @@ async function pull() {
       setCache(kind, list);
     }
   }
-  _cursor = r.data.serverTs || Date.now(); LS.set('cb_cursor', _cursor);
+  _cursor = r.data.serverTs || Date.now(); LS.set(teamKey('cb_cursor'), _cursor);
   _syncState = 'ok';
   if (changed) {
     if (full) { _renderCache.clear(); _detectedKeyCache.clear(); }
@@ -440,7 +466,7 @@ document.addEventListener('visibilitychange', () => {
   else { startSync(); if (!isEditingDrawerOpen && !_inlineEditActive) pull().catch(() => {}); }
 });
 
-const SYNC_MSG = { empty: 'На сервере пока нет песен. Администратору: Настройки → «Перенести данные из старой базы»', offline: 'Нет интернета: работаем с сохранённой копией', noauth: 'Откройте приложение через Telegram, чтобы синхронизировать', error: 'Сервер недоступен: изменения отправятся позже' };
+const SYNC_MSG = { noteam: 'Нет доступа к этой команде. Попросите ссылку-приглашение', empty: 'На сервере пока нет песен. Администратору: Настройки → «Перенести данные из старой базы»', offline: 'Нет интернета: работаем с сохранённой копией', noauth: 'Откройте приложение через Telegram, чтобы синхронизировать', error: 'Сервер недоступен: изменения отправятся позже' };
 async function loadData() {
   try {
     const [idbSongs, idbSetlists] = await Promise.all([IDB.getAllSongs(), IDB.getAllSetlists()]);
@@ -1150,10 +1176,12 @@ function searchSongs(query) {
 }
 // FIX: поиск идёт по songsCache в памяти (раньше — по IndexedDB, которая могла
 // отставать/содержать удалённые песни) и защищён от гонки ответов.
+const NO_TEAM_HTML = '<div class="no-team"><div class="empty-icon">👋</div><h3>Вы пока не в команде</h3><p>Попросите у руководителя ссылку-приглашение и откройте её в Telegram — песни команды появятся здесь.</p></div>';
 function renderSongs(filter = '') {
   const seq = ++_renderSongsSeq;
   const container = $('songs-container');
   if (!container) return;
+  if (_noTeam) { VIRTUAL.destroy(); container.style.height = ''; container.innerHTML = NO_TEAM_HTML; $('search-stats').textContent = ''; return; }
   const list = searchSongs(filter);
   if (seq !== _renderSongsSeq) return;
   const statsEl = $('search-stats');
@@ -1561,6 +1589,7 @@ $('bpm-tap-btn').addEventListener('click', () => {
 // ═══════════════════════════════════════════
 function getSlById(id) { return setlistsCache.find(s => s.id === id); }
 function renderSetlists() {
+  if (_noTeam) { $('setlists-container').innerHTML = NO_TEAM_HTML; return; }
   const c = $('setlists-container');
   if (!setlistsCache.length) { c.innerHTML = '<div class="empty" style="padding-top:48px"><div class="empty-icon">📋</div><p>Создайте первый сет-лист!</p></div>'; return; }
   const sorted = setlistsCache.slice().sort((a, b) => String(b.date || '').localeCompare(String(a.date || '')) || (b.createdAt || 0) - (a.createdAt || 0));
@@ -1791,13 +1820,13 @@ function showToastUndo(msg, cb) {
 // ═══════════════════════════════════════════
 // Тональности сет-листа: документ на сервере (через Worker)
 async function keysGet(id) {
-  const r = await api('GET', '/api/keys/' + encodeURIComponent(id));
+  const r = await api('GET', teamBase() + '/keys/' + encodeURIComponent(id));
   if (r.status === 404) return { notFound: true };
   if (!r.ok) return { error: r.status === 401 ? 'откройте через Telegram' : r.error };
   return { data: r.data };
 }
 async function keysPut(id, keys) {
-  const r = await api('PUT', '/api/keys/' + encodeURIComponent(id), { keys });
+  const r = await api('PUT', teamBase() + '/keys/' + encodeURIComponent(id), { keys });
   return r.ok ? { ok: true } : { error: r.error };
 }
 async function openSyncDrawer(slId, preloaded) {
@@ -1909,6 +1938,10 @@ function showSongOverflowMenu(song, btn) {
     { label: 'Шрифт крупнее (' + FONT_PCTS[fontSizeIdx] + '%)', keepOpen: true, onClick: item => { changeFontSize(1); item.textContent = 'Шрифт крупнее (' + FONT_PCTS[fontSizeIdx] + '%)'; } },
     { label: 'Шрифт мельче', keepOpen: true, onClick: () => { changeFontSize(-1); const it = _activeMenu && _activeMenu.el.firstChild && _activeMenu.el.children[1]; if (it) it.textContent = 'Шрифт крупнее (' + FONT_PCTS[fontSizeIdx] + '%)'; } },
     { label: 'Добавить в сет-лист', onClick: () => openPickSetlist(song.id) },
+    _teams.length > 1 && { label: 'Копировать в другую команду', onClick: () => {
+      const others = _teams.filter(t => t.id !== currentTeam);
+      openMenu(btn, others.map(t => ({ label: t.name, onClick: () => copySongToTeam(song, t) })));
+    } },
     { label: 'Подобрать под солиста', onClick: () => openSingerPicker(song) },
     { label: nt === 'flat' ? 'Показывать диезы ♯' : 'Показывать бемоли ♭', onClick: () => {
       if (_inlineEditActive) { showToast('Сначала сохраните редактирование'); return; }
@@ -3209,10 +3242,24 @@ function _ieMoveChord(f, t) {
 //  АДМИНИСТРАТОР: перенос старых данных, корзина
 // ═══════════════════════════════════════════
 let _isAdmin = false;
-async function checkAdmin() {
+// Кто я, в каких командах; включены ли команды вообще
+async function loadTeams() {
   const r = await api('GET', '/api/me');
-  _isAdmin = !!(r.ok && r.data && r.data.isAdmin);
+  if (!r.ok || !r.data) return false;
+  _isAdmin = !!r.data.isAdmin;
+  _teams = Array.isArray(r.data.teams) ? r.data.teams : [];
+  _legacyOpen = r.data.legacyOpen !== false;
+  if (currentTeam && !_teams.some(t => t.id === currentTeam)) currentTeam = null;
+  if (!currentTeam && _teams.length) currentTeam = _teams[0].id;
+  _noTeam = !_legacyOpen && !currentTeam;
+  LS.set('cb_team', currentTeam);
+  updateTeamBar();
+  return true;
+}
+async function checkAdmin() {
+  await loadTeams();
   $('admin-section').style.display = _isAdmin ? '' : 'none';
+  $('admin-legacy').style.display = _isAdmin && _legacyOpen ? '' : 'none';
   return _isAdmin;
 }
 $('admin-migrate-btn').addEventListener('click', () => showConfirm({
@@ -3233,7 +3280,7 @@ $('admin-migrate-btn').addEventListener('click', () => showConfirm({
 }));
 $('admin-trash-btn').addEventListener('click', async () => {
   const box = $('admin-trash'); box.textContent = 'Загружаем…';
-  const r = await api('GET', '/admin/trash');
+  const r = await api('GET', teamBase() + '/trash');
   if (!r.ok) { box.textContent = 'Не удалось: ' + r.error; return; }
   const list = (r.data.songs || []).sort((x, y) => (y.deletedAt || 0) - (x.deletedAt || 0));
   if (!list.length) { box.textContent = 'Корзина пуста'; return; }
@@ -3244,12 +3291,199 @@ $('admin-trash-btn').addEventListener('click', async () => {
 $('admin-trash').addEventListener('click', async e => {
   const b = e.target.closest('[data-restore]'); if (!b) return;
   b.disabled = true;
-  const r = await api('POST', '/admin/restore/songs/' + encodeURIComponent(b.dataset.restore));
+  const r = await api('POST', teamBase() + '/restore/songs/' + encodeURIComponent(b.dataset.restore));
   if (!r.ok) { b.disabled = false; showToast('Не удалось: ' + r.error); return; }
   b.closest('.sync-song-row').remove();
   await pull();
   showToast('Восстановлено: ' + r.data.item.title);
 });
+
+// ═══════════════════════════════════════════
+//  КОМАНДЫ: выбор, участники, приглашения, создание
+// ═══════════════════════════════════════════
+function currentTeamInfo() { return _teams.find(t => t.id === currentTeam) || null; }
+function updateTeamBar() {
+  const bar = $('team-bar'); if (!bar) return;
+  const t = currentTeamInfo();
+  bar.style.display = t ? '' : 'none';
+  if (t) $('team-chip-name').textContent = t.name;
+}
+async function switchTeam(id) {
+  if (id === currentTeam) return;
+  if (_inlineEditActive) { showToast('Сначала сохраните или отмените редактирование'); return; }
+  await flush().catch(() => {});
+  currentTeam = id; _noTeam = false;
+  LS.set('cb_team', id);
+  loadTeamState();
+  songsCache = []; setlistsCache = []; _snap.song = {}; _snap.setlist = {};
+  _renderCache.clear(); _detectedKeyCache.clear();
+  setlistContext = null; currentSongId = null; currentSetlistId = null;
+  updateTeamBar();
+  if (currentPage !== 'songs' && currentPage !== 'setlists') showPage('songs'); else refreshVisible();
+  await loadData();
+}
+$('team-chip').addEventListener('click', e => {
+  const items = _teams.map(t => ({ label: (t.id === currentTeam ? '✓ ' : '   ') + t.name, onClick: () => switchTeam(t.id) }));
+  items.push({ label: 'Участники и приглашение', onClick: () => openTeamDrawer() });
+  openMenu(e.currentTarget, items);
+});
+function shareLink(link, text) {
+  const url = 'https://t.me/share/url?url=' + encodeURIComponent(link) + '&text=' + encodeURIComponent(text);
+  if (tg && tg.openTelegramLink) { try { tg.openTelegramLink(url); return; } catch {} }
+  copyText(link);
+}
+function copyText(text) {
+  const done = () => showToast('Ссылка скопирована');
+  if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(text).then(done).catch(fallback); else fallback();
+  function fallback() {
+    const ta = document.createElement('textarea'); ta.value = text; ta.style.position = 'fixed'; ta.style.opacity = '0';
+    document.body.appendChild(ta); ta.select();
+    try { document.execCommand('copy'); done(); } catch { showToast('Скопируйте ссылку вручную'); }
+    ta.remove();
+  }
+}
+function linkBlockHtml(link, shareText) {
+  if (!link) return '<div class="format-hint">Не удалось построить ссылку: в Worker не задана переменная BOT_USERNAME.</div>';
+  return `<div class="team-link">${escapeHtml(link)}</div>
+    <div class="team-actions"><button class="ctrl-btn primary" data-share="${escapeHtml(link)}" data-share-text="${escapeHtml(shareText)}">Поделиться</button>
+    <button class="ctrl-btn" data-copy="${escapeHtml(link)}">Скопировать</button></div>`;
+}
+document.addEventListener('click', e => {
+  const s = e.target.closest('[data-share]'); if (s) { shareLink(s.dataset.share, s.dataset.shareText || ''); return; }
+  const c = e.target.closest('[data-copy]'); if (c) copyText(c.dataset.copy);
+});
+async function openTeamDrawer() {
+  if (!currentTeam) return;
+  openOverlay('overlay-team');
+  $('team-body').innerHTML = '<div class="empty" style="padding:20px">Загружаем…</div>';
+  const r = await api('GET', teamBase() + '/info');
+  if (!r.ok) { $('team-body').innerHTML = `<div class="empty" style="padding:20px">Не удалось: ${escapeHtml(r.error)}</div>`; return; }
+  renderTeamDrawer(r.data);
+}
+function renderTeamDrawer(d) {
+  const isOwner = d.role === 'owner';
+  const myId = tg && tg.initDataUnsafe && tg.initDataUnsafe.user ? tg.initDataUnsafe.user.id : null;
+  $('team-title').textContent = d.team.name;
+  const members = d.members.map(m => `<div class="member-row"><span class="member-avatar">${escapeHtml((m.name || '?').slice(0, 1).toUpperCase())}</span>
+      <span class="member-name">${escapeHtml(m.name || String(m.userId))}${m.userId === myId ? ' (вы)' : ''}</span>
+      <span class="member-role">${m.role === 'owner' ? 'владелец' : ''}</span>
+      ${isOwner && m.role !== 'owner' ? `<button class="member-remove" data-remove-member="${m.userId}" data-name="${escapeHtml(m.name || '')}" aria-label="Удалить участника"><svg class="ico"><use href="#i-x"/></svg></button>` : ''}</div>`).join('');
+  $('team-body').innerHTML = `
+    <div class="section-header" style="margin-top:0">Пригласить в команду</div>
+    <div class="format-hint" style="margin:0 0 8px">Отправьте ссылку в чат команды. Кто откроет её, станет участником и сможет менять песни.</div>
+    ${linkBlockHtml(d.inviteLink, 'Присоединяйся к команде «' + d.team.name + '» в ChordBook')}
+    ${isOwner ? '<button class="ctrl-btn" id="team-new-invite" style="width:100%;justify-content:center;height:42px;margin:-6px 0 14px">Новая ссылка (старая перестанет работать)</button>' : ''}
+    <div class="section-header">Участники: ${d.members.length}</div>
+    ${members}
+    <div class="section-header">Ещё</div>
+    ${isOwner ? '<button class="ctrl-btn" id="team-rename" style="width:100%;justify-content:center;height:44px;margin-bottom:8px">Переименовать команду</button>' : ''}
+    <button class="ctrl-btn" id="team-trash" style="width:100%;justify-content:center;height:44px;margin-bottom:8px">Корзина: удалённые песни</button>
+    <div id="team-trash-list"></div>
+    ${!isOwner ? '<button class="btn-danger" id="team-leave">Выйти из команды</button>' : ''}`;
+  const onIf = (id, fn) => { const el = $(id); if (el) el.addEventListener('click', fn); };
+  onIf('team-new-invite', () => showConfirm({ title: 'Создать новую ссылку?', msg: 'Старая ссылка перестанет работать. Участники, которые уже вступили, останутся в команде.', okLabel: 'Создать', onOk: async () => {
+    const r = await api('POST', teamBase() + '/invite');
+    if (!r.ok) { showToast('Не удалось: ' + r.error); return; }
+    showToast('Новая ссылка готова'); openTeamDrawer();
+  } }));
+  onIf('team-rename', () => showPrompt({ title: 'Название команды', value: d.team.name, onOk: async v => {
+    const r = await api('PUT', teamBase() + '/info', { name: v });
+    if (!r.ok) { showToast('Не удалось: ' + r.error); return; }
+    const t = currentTeamInfo(); if (t) t.name = r.data.name;
+    updateTeamBar(); openTeamDrawer();
+  } }));
+  onIf('team-trash', () => loadTrash($('team-trash-list')));
+  onIf('team-leave', () => showConfirm({ title: 'Выйти из команды?', msg: 'Песни команды пропадут с этого устройства. Вернуться можно по ссылке-приглашению.', okLabel: 'Выйти', onOk: async () => {
+    const r = await api('DELETE', teamBase() + '/members/' + myId);
+    if (!r.ok) { showToast('Не удалось: ' + r.error); return; }
+    closeOverlay('overlay-team');
+    _teams = _teams.filter(t => t.id !== currentTeam);
+    const next = _teams[0] ? _teams[0].id : null;
+    if (next) await switchTeam(next); else { currentTeam = null; LS.set('cb_team', null); _noTeam = !_legacyOpen; songsCache = []; setlistsCache = []; updateTeamBar(); refreshVisible(); }
+  } }));
+  $('team-body').querySelectorAll('[data-remove-member]').forEach(b => b.addEventListener('click', () => showConfirm({
+    title: 'Удалить участника?', msg: `${b.dataset.name || 'Участник'} потеряет доступ к песням команды.`, okLabel: 'Удалить', onOk: async () => {
+      const r = await api('DELETE', teamBase() + '/members/' + b.dataset.removeMember);
+      if (!r.ok) { showToast('Не удалось: ' + r.error); return; }
+      openTeamDrawer();
+    } })));
+}
+async function loadTrash(box) {
+  box.textContent = 'Загружаем…';
+  const r = await api('GET', teamBase() + '/trash');
+  if (!r.ok) { box.textContent = 'Не удалось: ' + r.error; return; }
+  const list = (r.data.songs || []).sort((x, y) => (y.deletedAt || 0) - (x.deletedAt || 0));
+  if (!list.length) { box.textContent = 'Корзина пуста'; return; }
+  box.innerHTML = list.map(s => `<div class="sync-song-row"><div class="sync-song-info"><div class="sync-song-title">${escapeHtml(s.title)}</div>
+    <div class="sync-song-keys">${s.deletedAt ? new Date(s.deletedAt).toLocaleString('ru') : ''}</div></div>
+    <button class="ctrl-btn" data-restore="${escapeHtml(s.id)}">Восстановить</button></div>`).join('');
+}
+document.addEventListener('click', async e => {
+  const b = e.target.closest('#team-trash-list [data-restore]'); if (!b) return;
+  b.disabled = true;
+  const r = await api('POST', teamBase() + '/restore/songs/' + encodeURIComponent(b.dataset.restore));
+  if (!r.ok) { b.disabled = false; showToast('Не удалось: ' + r.error); return; }
+  b.closest('.sync-song-row').remove();
+  await pull();
+  showToast('Восстановлено: ' + r.data.item.title);
+});
+
+// Включить команды: текущая библиотека становится командой
+$('admin-teams-btn').addEventListener('click', () => showPrompt({ title: 'Название вашей команды', value: 'Основная команда', onOk: async v => {
+  const r = await api('POST', '/admin/main-team', { name: v });
+  if (!r.ok) { showToast('Не удалось: ' + r.error); return; }
+  _legacyOpen = false;
+  _teams = [r.data.team, ..._teams.filter(t => t.id !== 'main')];
+  closeOverlay('overlay-settings');
+  await switchTeam('main');
+  showToast('Команды включены. Отправьте ссылку участникам', 5000);
+  openTeamDrawer();
+} }));
+// Одноразовая ссылка-разрешение на создание команды
+$('admin-create-link-btn').addEventListener('click', async () => {
+  const box = $('admin-create-link'); box.textContent = 'Создаём…';
+  const r = await api('POST', '/admin/create-link');
+  if (!r.ok) { box.textContent = 'Не удалось: ' + r.error; return; }
+  box.innerHTML = '<div class="format-hint" style="margin:0 0 6px">Одноразовая: по ней можно создать ровно одну команду.</div>' + linkBlockHtml(r.data.link, 'Ссылка на создание команды в ChordBook');
+});
+
+// Вход по ссылке: j-<код> — вступить в команду, n-<код> — создать команду
+async function handleStartParam() {
+  const p = tg && tg.initDataUnsafe && tg.initDataUnsafe.start_param;
+  if (!p) return;
+  const used = LS.get('cb_used_start', []) || [];
+  if (used.includes(p)) return;
+  const remember = () => LS.set('cb_used_start', used.concat(p).slice(-20));
+  const m = /^([jn])-([a-z0-9]{8,32})$/.exec(p);
+  if (!m) return;
+  if (m[1] === 'j') {
+    const r = await api('POST', '/api/join', { code: m[2] });
+    if (!r.ok) { showToast(r.error, 5000); return; }
+    remember();
+    if (!_teams.some(t => t.id === r.data.team.id)) _teams.push(r.data.team);
+    await switchTeam(r.data.team.id);
+    showToast(r.data.alreadyMember ? `Вы уже в команде «${r.data.team.name}»` : `Вы вступили в команду «${r.data.team.name}»`, 4000);
+    return;
+  }
+  // Окно не блокирует запуск: приложение грузится, пока человек вводит название (или нажмёт «Отмена»)
+  showPrompt({ title: 'Создать команду', value: '', placeholder: 'Название, например «Молодёжка»', onOk: async v => {
+    const r = await api('POST', '/api/teams', { name: v, createCode: m[2] });
+    if (!r.ok) { showToast(r.error, 5000); return; }
+    remember();
+    _teams.push(r.data.team);
+    await switchTeam(r.data.team.id);
+    showToast(`Команда «${r.data.team.name}» создана`, 4000);
+    openTeamDrawer();
+  } });
+}
+
+// Скопировать песню в другую свою команду
+async function copySongToTeam(song, team) {
+  const copy = { ...stripLocal(song), id: uid(), updatedAt: Date.now() };
+  delete copy._aiChordsBackup;
+  const r = await api('PUT', '/api/t/' + encodeURIComponent(team.id) + '/songs/' + copy.id, { item: copy, baseRev: 0 });
+  showToast(r.ok ? `«${song.title}» скопирована в «${team.name}»` : 'Не удалось скопировать: ' + r.error, 4000);
+}
 
 // ═══════════════════════════════════════════
 //  ПОРЯДОК ПЕСНИ (arrangement) — редактор
@@ -3358,6 +3592,11 @@ initTelegram();
 const _appReady = (async function init() {
   showPage('songs');
   await migrateFromLocalStorage();
+  const prevTeam = currentTeam;
+  const online = await loadTeams().catch(() => false);
+  if (online && currentTeam !== prevTeam) loadTeamState();
+  if (online) await handleStartParam();
+  if (_noTeam) { refreshVisible(); return; }
   await loadData();
   await checkPendingSongFromBot();
   setTimeout(updateHeaderHeight, 100);

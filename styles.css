@@ -580,3 +580,24 @@ body.theme-day {
 .cs-seq-chip b { color: inherit; opacity: .75; font-family: var(--font-chord); }
 /* «Контраст»: цвета не нужны — белые значки с чёрной цифрой */
 body.theme-bw .cs-letter[data-c], body.theme-bw .cs-seq-chip[data-c] { background: #FFFFFF; color: #000000; }
+
+/* ── КОМАНДЫ ── */
+.team-bar { padding: 0 16px 8px; }
+body:not(.page-list) .team-bar { display: none !important; }
+.team-chip { display: inline-flex; align-items: center; gap: 8px; height: 34px; padding: 0 10px 0 12px; border: 0; border-radius: 17px; background: var(--surface); color: var(--text); font: 600 14px var(--font-ui); cursor: pointer; max-width: 100%; }
+.team-chip span:not(.team-chip-dot) { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.team-chip .ico { width: 16px; height: 16px; color: var(--muted); }
+.team-chip-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--chord); flex-shrink: 0; }
+.team-link { display: flex; gap: 8px; align-items: center; background: var(--surface-2); border-radius: 12px; padding: 10px 12px; font: 500 13px 'SF Mono', ui-monospace, monospace; color: var(--muted); word-break: break-all; margin-bottom: 8px; }
+.team-actions { display: flex; gap: 8px; margin-bottom: 16px; }
+.team-actions .ctrl-btn { flex: 1; justify-content: center; height: 44px; }
+.team-actions .ctrl-btn.primary { background: var(--chord); color: var(--on-accent); }
+.member-row { display: flex; align-items: center; gap: 10px; padding: 10px 12px; background: var(--surface-2); border-radius: 12px; margin-bottom: 6px; }
+.member-avatar { width: 32px; height: 32px; border-radius: 50%; background: var(--chord-dim); color: var(--chord); display: grid; place-items: center; font: 700 14px var(--font-ui); flex-shrink: 0; }
+.member-name { flex: 1; min-width: 0; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.member-role { font-size: 12px; color: var(--muted); }
+.member-remove { border: 0; background: none; color: var(--muted); width: 32px; height: 32px; border-radius: 8px; cursor: pointer; display: grid; place-items: center; }
+.member-remove .ico { width: 18px; height: 18px; }
+.no-team { text-align: center; padding: 48px 24px; color: var(--muted); }
+.no-team h3 { color: var(--text); font-size: 18px; margin-bottom: 8px; }
+.no-team p { line-height: 1.55; }

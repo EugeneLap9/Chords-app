@@ -49,6 +49,9 @@
   <div class="header-actions" id="header-actions"></div>
 </div>
 
+<div class="team-bar" id="team-bar" style="display:none">
+  <button class="team-chip" id="team-chip" aria-label="Выбрать команду"><span class="team-chip-dot"></span><span id="team-chip-name">Команда</span><svg class="ico"><use href="#i-down"/></svg></button>
+</div>
 <div class="search-wrap" id="search-wrap">
   <span class="search-icon"><svg class="ico"><use href="#i-search"/></svg></span>
   <input class="search-input" id="search-input" type="search" placeholder="Название, автор или строка" autocomplete="off" aria-label="Поиск песен">
@@ -306,6 +309,12 @@
   </div>
 </div></div>
 
+<!-- КОМАНДА -->
+<div class="overlay" id="overlay-team" role="dialog" aria-modal="true" aria-label="Команда"><div class="drawer"><div class="drawer-handle"></div>
+  <div class="drawer-header"><div class="drawer-title" id="team-title">Команда</div><button class="drawer-close" data-close="overlay-team" aria-label="Закрыть"><svg class="ico" style="width:16px;height:16px"><use href="#i-x"/></svg></button></div>
+  <div id="team-body"><div class="empty" style="padding:20px">Загружаем…</div></div>
+</div></div>
+
 <!-- SETTINGS -->
 <div class="overlay" id="overlay-settings" role="dialog" aria-modal="true"><div class="drawer" style="max-height:85dvh"><div class="drawer-handle"></div>
   <div class="drawer-header"><div class="drawer-title">Настройки</div><button class="drawer-close" data-close="overlay-settings" aria-label="Закрыть">✕</button></div>
@@ -340,7 +349,13 @@
   </div>
   <div id="admin-section" style="display:none">
     <div class="section-header">Администратор</div>
-    <button class="ctrl-btn" id="admin-migrate-btn" style="width:100%;height:46px;justify-content:center;margin-bottom:8px">Перенести данные из старой базы</button>
+    <div id="admin-legacy" style="display:none">
+      <button class="ctrl-btn" id="admin-teams-btn" style="width:100%;height:46px;justify-content:center;margin-bottom:8px">Включить команды</button>
+      <div class="format-hint" style="margin:-2px 2px 10px">Текущая библиотека станет вашей первой командой. Остальные войдут в неё по ссылке-приглашению.</div>
+      <button class="ctrl-btn" id="admin-migrate-btn" style="width:100%;height:46px;justify-content:center;margin-bottom:8px">Перенести данные из старой базы</button>
+    </div>
+    <button class="ctrl-btn" id="admin-create-link-btn" style="width:100%;height:46px;justify-content:center;margin-bottom:8px">Ссылка на создание новой команды</button>
+    <div id="admin-create-link" style="margin-bottom:8px"></div>
     <button class="ctrl-btn" id="admin-trash-btn" style="width:100%;height:46px;justify-content:center;margin-bottom:8px">Корзина: удалённые песни</button>
     <div id="admin-trash" style="margin-bottom:12px"></div>
   </div>
