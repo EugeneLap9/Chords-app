@@ -1938,9 +1938,10 @@ function showSongOverflowMenu(song, btn) {
     { label: 'Шрифт крупнее (' + FONT_PCTS[fontSizeIdx] + '%)', keepOpen: true, onClick: item => { changeFontSize(1); item.textContent = 'Шрифт крупнее (' + FONT_PCTS[fontSizeIdx] + '%)'; } },
     { label: 'Шрифт мельче', keepOpen: true, onClick: () => { changeFontSize(-1); const it = _activeMenu && _activeMenu.el.firstChild && _activeMenu.el.children[1]; if (it) it.textContent = 'Шрифт крупнее (' + FONT_PCTS[fontSizeIdx] + '%)'; } },
     { label: 'Добавить в сет-лист', onClick: () => openPickSetlist(song.id) },
-    _teams.length > 1 && { label: 'Копировать в другую команду', onClick: () => {
-      const others = _teams.filter(t => t.id !== currentTeam);
-      openMenu(btn, others.map(t => ({ label: t.name, onClick: () => copySongToTeam(song, t) })));
+    (_teams.length + (_legacyOpen ? 1 : 0)) > 1 && { label: 'Копировать в другую команду', onClick: () => {
+      const targets = _teams.filter(t => t.id !== currentTeam);
+      if (_legacyOpen && currentTeam) targets.unshift({ id: null, name: LEGACY_NAME });
+      openMenu(btn, targets.map(t => ({ label: t.name, onClick: () => copySongToTeam(song, t) })));
     } },
     { label: 'Подобрать под солиста', onClick: () => openSingerPicker(song) },
     { label: nt === 'flat' ? 'Показывать диезы ♯' : 'Показывать бемоли ♭', onClick: () => {
@@ -3250,7 +3251,9 @@ async function loadTeams() {
   _teams = Array.isArray(r.data.teams) ? r.data.teams : [];
   _legacyOpen = r.data.legacyOpen !== false;
   if (currentTeam && !_teams.some(t => t.id === currentTeam)) currentTeam = null;
-  if (!currentTeam && _teams.length) currentTeam = _teams[0].id;
+  // Пока команды не включены, общая библиотека (currentTeam = null) — полноценный выбор,
+  // сами в команду не переключаем. После включения без команды делать нечего — берём первую.
+  if (!currentTeam && _teams.length && !_legacyOpen) currentTeam = _teams[0].id;
   _noTeam = !_legacyOpen && !currentTeam;
   LS.set('cb_team', currentTeam);
   updateTeamBar();
@@ -3302,11 +3305,13 @@ $('admin-trash').addEventListener('click', async e => {
 //  КОМАНДЫ: выбор, участники, приглашения, создание
 // ═══════════════════════════════════════════
 function currentTeamInfo() { return _teams.find(t => t.id === currentTeam) || null; }
+const LEGACY_NAME = 'Общая библиотека';
 function updateTeamBar() {
   const bar = $('team-bar'); if (!bar) return;
   const t = currentTeamInfo();
-  bar.style.display = t ? '' : 'none';
-  if (t) $('team-chip-name').textContent = t.name;
+  const show = !!t || (_legacyOpen && _teams.length > 0); // есть из чего выбирать
+  bar.style.display = show ? '' : 'none';
+  if (show) $('team-chip-name').textContent = t ? t.name : LEGACY_NAME;
 }
 async function switchTeam(id) {
   if (id === currentTeam) return;
@@ -3323,8 +3328,10 @@ async function switchTeam(id) {
   await loadData();
 }
 $('team-chip').addEventListener('click', e => {
-  const items = _teams.map(t => ({ label: (t.id === currentTeam ? '✓ ' : '   ') + t.name, onClick: () => switchTeam(t.id) }));
-  items.push({ label: 'Участники и приглашение', onClick: () => openTeamDrawer() });
+  const items = [];
+  if (_legacyOpen) items.push({ label: (!currentTeam ? '✓ ' : '   ') + LEGACY_NAME, onClick: () => switchTeam(null) });
+  _teams.forEach(t => items.push({ label: (t.id === currentTeam ? '✓ ' : '   ') + t.name, onClick: () => switchTeam(t.id) }));
+  if (currentTeam) items.push({ label: 'Участники и приглашение', onClick: () => openTeamDrawer() });
   openMenu(e.currentTarget, items);
 });
 function shareLink(link, text) {
@@ -3481,7 +3488,8 @@ async function handleStartParam() {
 async function copySongToTeam(song, team) {
   const copy = { ...stripLocal(song), id: uid(), updatedAt: Date.now() };
   delete copy._aiChordsBackup;
-  const r = await api('PUT', '/api/t/' + encodeURIComponent(team.id) + '/songs/' + copy.id, { item: copy, baseRev: 0 });
+  const base = team.id ? '/api/t/' + encodeURIComponent(team.id) : '/api';
+  const r = await api('PUT', base + '/songs/' + copy.id, { item: copy, baseRev: 0 });
   showToast(r.ok ? `«${song.title}» скопирована в «${team.name}»` : 'Не удалось скопировать: ' + r.error, 4000);
 }
 
