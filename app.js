@@ -862,18 +862,62 @@ function renderBlockLabel(label, repeat) {
   if (!label) return '';
   return `<div class="block-label-card">${escapeHtml(label)}${repeat > 1 ? `<span class="block-repeat-badge">×${repeat}</span>` : ''}</div>`;
 }
-function renderMixedBlock(song, b, i) {
+// Строка «аккорды над словами»: каждое слово — блок, аккорд стоит над своим словом/слогом.
+// Перенос строки — только между словами, поэтому аккорд никогда не отрывается от слова.
+function renderChordWords(item, tr) {
+  const text = item.text;
+  const at = new Map();
+  item.chords.forEach(c => { if (!at.has(c.at)) at.set(c.at, []); at.get(c.at).push(tr(c.chord)); });
+  // плоский список сегментов по словам: { w: номер слова, chord, t }
+  const segs = [];
+  const re = /\S+\s*/g; let m, w = 0;
+  while ((m = re.exec(text))) {
+    const s0 = m.index, e = s0 + m[0].length;
+    const cuts = [...at.keys()].filter(p => p >= s0 && p < e).sort((a, b) => a - b);
+    if (!cuts.length || cuts[0] > s0) segs.push({ w, chord: '', t: text.slice(s0, cuts.length ? cuts[0] : e) });
+    cuts.forEach((c, k) => {
+      const cs = at.get(c);
+      cs.slice(0, -1).forEach(ch => segs.push({ w, chord: ch, t: '' }));
+      segs.push({ w, chord: cs[cs.length - 1], t: text.slice(c, k + 1 < cuts.length ? cuts[k + 1] : e) });
+    });
+    w++;
+  }
+  if (at.has(text.length) && text.length) at.get(text.length).forEach(ch => segs.push({ w: w, chord: ch, t: '' }));
+  // аккорд шире слова выступает над следующим словом, если там нет своего аккорда — текст не раздвигается
+  segs.forEach((sg, i) => { sg.free = !!sg.chord && !!sg.t && i + 1 < segs.length && !segs[i + 1].chord; });
+  let html = '', cur = -1;
+  segs.forEach(sg => {
+    if (sg.w !== cur) { if (cur >= 0) html += '</span>'; html += '<span class="cl-w">'; cur = sg.w; }
+    html += `<span class="cl-s"><b class="cl-c${sg.free ? ' cl-free' : ''}">${sg.chord ? escapeHtml(sg.chord) : ''}</b><span class="cl-t">${escapeHtml(sg.t)}</span></span>`;
+  });
+  return html + (cur >= 0 ? '</span>' : '');
+}
+function renderMixedBlock(song, b, i, tr) {
+  tr = tr || (c => c);
   if (!b.lines.some(l => l.trim()) && !b.label) return '';
   const color = getBlockColor(b.label, i);
   const collapsed = isCollapsed(song.id, 'm' + i, false);
   const colBtn = `<button class="block-collapse-btn" data-ck="m${i}" aria-label="Свернуть блок">▼</button>`;
   const head = `<div class="block-header-row">${renderBlockLabel(b.label, b.repeat) || '<span></span>'}${colBtn}</div>`;
+  const items = CE.chordLines(b.lines);
+  const badges = cs => cs.map(c => `<span class="chord-badge">${escapeHtml(tr(c.chord))}</span>`).join('');
   let body;
-  if (isAllSingleChordNoText(b.lines)) {
-    const all = b.lines.filter(l => lineChords(l).length).map(l => lineChords(l)[0]);
-    body = `<div class="chord-row">${all.map(c => `<span class="chord-badge">${escapeHtml(c)}</span>`).join('')}</div>`;
+  if (items.length && items.every(it => !it.text && it.chords.length === 1 && it.repeat === 1)) {
+    body = `<div class="chord-row">${badges(items.map(it => it.chords[0]))}</div>`;
   } else {
-    body = collapseRepeatingLines(b.lines).map(({ line, count }) => renderLineWithRepeat(line, count)).join('');
+    // одинаковые строки подряд → одна строка ×N
+    const groups = [];
+    items.forEach(it => {
+      const k = it.text + '|' + it.chords.map(c => c.chord + '@' + c.at).join(',');
+      const last = groups[groups.length - 1];
+      if (last && last.k === k) last.n += it.repeat; else groups.push({ k, it, n: it.repeat });
+    });
+    body = groups.map(({ it, n }) => {
+      const rep = n > 1 ? `<span class="repeat-badge">×${n}</span>` : '';
+      if (!it.text) return `<div class="ie-line-wrap"><div class="chord-row">${badges(it.chords)}${rep}</div></div>`;
+      if (!it.chords.length) return `<div class="ie-line-wrap"><div class="lyric-line">${escapeHtml(it.text)}${rep}</div></div>`;
+      return `<div class="ie-line-wrap"><div class="cl-line">${renderChordWords(it, tr)}${rep}</div></div>`;
+    }).join('');
   }
   return `<div class="song-card-block${collapsed ? ' block-collapsed' : ''}" style="--block-color:${color}">${head}<div class="block-chords">${body}</div></div>`;
 }
@@ -1007,7 +1051,10 @@ function renderSongContent(song, transpose) {
   const cacheKey = song.id + ':' + transpose + ':' + (notation || 'x') + ':' + (twoColAllowed() ? 2 : 1);
   if (_renderCache.has(cacheKey)) return _renderCache.get(cacheKey);
   const blocks = parseSong(song.lyrics, transpose, notation);
-  const html = splitBlocksToColumns(blocks, (b, i) => renderMixedBlock(song, b, i)) + renderChordsOnly(song, blocks, transpose, notation);
+  // места аккордов считаем по исходному тексту (ширина [F#m] и [Gm] разная), а названия транспонируем
+  const blocks0 = transpose || notation ? parseSong(song.lyrics, 0) : blocks;
+  const tr = transpose || notation ? (c => transposeChord(c, transpose, notation)) : (c => c);
+  const html = splitBlocksToColumns(blocks0, (b, i) => renderMixedBlock(song, b, i, tr)) + renderChordsOnly(song, blocks, transpose, notation);
   if (_renderCache.size >= RENDER_CACHE_MAX) _renderCache.delete(_renderCache.keys().next().value);
   _renderCache.set(cacheKey, html);
   return html;
@@ -1176,12 +1223,21 @@ function searchSongs(query) {
 }
 // FIX: поиск идёт по songsCache в памяти (раньше — по IndexedDB, которая могла
 // отставать/содержать удалённые песни) и защищён от гонки ответов.
-const NO_TEAM_HTML = '<div class="no-team"><div class="empty-icon">👋</div><h3>Вы пока не в команде</h3><p>Попросите у руководителя ссылку-приглашение и откройте её в Telegram — песни команды появятся здесь.</p></div>';
+let _joinError = '';
+// Экран «нет команды»: ссылку можно открыть в Telegram ИЛИ просто вставить сюда —
+// так вступление работает, даже если Telegram открыл чат с ботом, а не приложение.
+function noTeamHtml() {
+  return `<div class="no-team"><div class="empty-icon">👋</div><h3>Вы пока не в команде</h3>
+    <p>Откройте ссылку-приглашение от руководителя в Telegram или вставьте её сюда.</p>
+    <div class="join-box"><input class="form-input" id="join-input" placeholder="https://t.me/…?startapp=j-…" autocomplete="off" autocapitalize="off" spellcheck="false">
+    <button class="btn-primary" id="join-btn">Вступить</button></div>
+    ${_joinError ? `<div class="join-error">${escapeHtml(_joinError)}</div>` : ''}</div>`;
+}
 function renderSongs(filter = '') {
   const seq = ++_renderSongsSeq;
   const container = $('songs-container');
   if (!container) return;
-  if (_noTeam) { VIRTUAL.destroy(); container.style.height = ''; container.innerHTML = NO_TEAM_HTML; $('search-stats').textContent = ''; return; }
+  if (_noTeam) { VIRTUAL.destroy(); container.style.height = ''; container.innerHTML = noTeamHtml(); $('search-stats').textContent = ''; return; }
   const list = searchSongs(filter);
   if (seq !== _renderSongsSeq) return;
   const statsEl = $('search-stats');
@@ -1477,6 +1533,23 @@ function openEditSong(id) {
 }
 
 // Собирает объект песни из формы (без побочных эффектов — удобно тестировать)
+// Аккорды поменяли в тексте песни — ручные квадраты этих блоков получают те же правки
+function syncLayoutWithLyrics(layout, oldBlocks, newBlocks) {
+  if (!layout) return layout;
+  const oldKeys = CE.blockKeys(oldBlocks);
+  const out = {};
+  Object.keys(layout).forEach(bi => {
+    const e = layout[bi];
+    const ob = oldBlocks[oldKeys.indexOf(e.key)], nb = newBlocks[+bi];
+    if (!ob || !nb) { out[bi] = e; return; }
+    const tr = c => CE.transposeChord(c, e.baseTranspose | 0, e.baseNotation);
+    const oldSeq = CE.blockSequence(ob.lines).seq.map(tr), newSeq = CE.blockSequence(nb.lines).seq.map(tr);
+    if (oldSeq.join(' ') === newSeq.join(' ')) { out[bi] = e; return; }
+    const r = CE.projectEdits(oldSeq, newSeq, e.squares);
+    out[bi] = r.applied ? { ...e, squares: CE.normalizeSquares(r.squares) } : e;
+  });
+  return out;
+}
 function buildSongFromForm(prev) {
   const title = $('inp-title').value.trim();
   const lyrics = $('inp-lyrics').value.replace(/\r/g, '');
@@ -1496,6 +1569,7 @@ function buildSongFromForm(prev) {
   if (prev && prev.chordsOnlyLayout) {
     // FIX (баг «чужой блок»): раскладка переносится по стабильному ключу блока
     layout = CE.remapLayout(prev.chordsOnlyLayout, parseSong(prev.lyrics, 0), newBlocks);
+    layout = syncLayoutWithLyrics(layout, parseSong(prev.lyrics, 0), newBlocks);
   }
   const coRaw = $('inp-chords-only').value.trim();
   if (coRaw && coRaw !== _initialChordsOnlyText.trim()) {
@@ -1589,7 +1663,7 @@ $('bpm-tap-btn').addEventListener('click', () => {
 // ═══════════════════════════════════════════
 function getSlById(id) { return setlistsCache.find(s => s.id === id); }
 function renderSetlists() {
-  if (_noTeam) { $('setlists-container').innerHTML = NO_TEAM_HTML; return; }
+  if (_noTeam) { $('setlists-container').innerHTML = noTeamHtml(); return; }
   const c = $('setlists-container');
   if (!setlistsCache.length) { c.innerHTML = '<div class="empty" style="padding-top:48px"><div class="empty-icon">📋</div><p>Создайте первый сет-лист!</p></div>'; return; }
   const sorted = setlistsCache.slice().sort((a, b) => String(b.date || '').localeCompare(String(a.date || '')) || (b.createdAt || 0) - (a.createdAt || 0));
@@ -2624,11 +2698,13 @@ function printSong(song) {
     .block-label-card,.chords-only-label{font-size:10px;font-weight:800;letter-spacing:.12em;text-transform:uppercase;color:#555}
     .chord-badge{font-family:'Courier New',monospace;font-size:14px;font-weight:900;color:#111;margin-right:6px}
     .lyric-line{font-family:'Courier New',monospace;font-size:12px;color:#444;white-space:pre-wrap}
+    .cl-line{display:flex;flex-wrap:wrap;align-items:flex-end}.cl-w{display:inline-flex;align-items:flex-end}.cl-s{display:inline-flex;flex-direction:column}
+    .cl-c{font-family:'Courier New',monospace;font-size:13px;font-weight:900;color:#111;min-height:1.1em;padding-right:4px}.cl-t{font-size:13px;color:#333;white-space:pre}
     .cs-square{display:flex;gap:10px;align-items:center}.cs-rows{flex:1}.cs-rep{font-weight:900;font-family:monospace}
     .cs-row-rep,.repeat-badge,.block-repeat-badge{font-size:11px;color:#666;margin-left:4px}
     .block-collapse-btn,.cs-form,.cs-manual-dot{display:none}
     ${mode === 'chords' ? '.song-card-block,.song-two-col{display:none}' : '.chords-only-block{display:none}'}
-    ${mode === 'words' ? '.chord-row{display:none}' : ''}
+    ${mode === 'words' ? '.chord-row,.cl-c{display:none}' : ''}
     .song-two-col{display:flex;gap:16px}.song-col{flex:1}`;
   const html = `<!DOCTYPE html><html lang="ru"><head><meta charset="UTF-8"><title>${escapeHtml(song.title)}</title><style>${css}</style></head><body>
     <h1>${escapeHtml(song.title)}</h1><div class="meta">${song.artist ? escapeHtml(song.artist) + ' · ' : ''}${escapeHtml(transposeKey(getSongKey(song), transposeOffset, getSongNotation(song.id)))}${song.bpm ? ' · ' + song.bpm + ' BPM' : ''}</div>
@@ -2732,6 +2808,12 @@ function _ieBuildLyrics(blocks) {
     if (b.repeat > 1) out.push('#repeat:' + b.repeat);
     b.lines.forEach(l => {
       if (_ieLineUnchanged(l)) { out.push(l.raw.replace(/\s+$/, '')); return; }
+      // текст строки тот же — меняем только аккорды, оставляя их над своими словами
+      if (l.raw != null && lineLyric(l.raw) === l.lyric) {
+        const nr = CE.applyChordsToRaw(l.raw, l.chords).replace(/\s+$/, '');
+        if (nr.trim()) out.push(nr);
+        return;
+      }
       const cs = l.chords.map(c => '[' + c + ']').join(' ');
       if (cs || l.lyric) out.push([cs, l.lyric].filter(Boolean).join(' '));
     });
@@ -2741,10 +2823,64 @@ function _ieBuildLyrics(blocks) {
 function _ieSnapshot() { return JSON.stringify({ b: _ieBlocks, l: _ceLayout, r: [..._ceReset] }); }
 function _ieRestore(snap) { const o = JSON.parse(snap); _ieBlocks = o.b; _ceLayout = o.l; _ceReset = new Set(o.r); }
 function _ieIsDirty() { return _inlineEditActive && _ieSnapshot() !== _ieInitialSnap; }
+// ─────────── синхронизация аккордов: текст ⇄ квадраты ───────────
+// Правка аккорда в одном режиме сразу переносится в другой: замена, вставка,
+// удаление и перестановка. Повторы и структура квадратов (×N, строки, новые
+// квадраты) — это раскладка для игры, текст песни они не меняют.
+function _ieLineText(l) { return l.chords.map(c => '[' + c + ']').join(' ') + (l.lyric ? ' ' + l.lyric : ''); }
+function _ieLinesSeq(b) { return b ? CE.blockSequence(b.lines.map(_ieLineText)).seq : []; }
+function _ieLinesAsSquares(b) {
+  const out = [];
+  b.lines.forEach((l, li) => {
+    if (!l.chords.length) return;
+    out.push({ repeat: CE.parseLine(_ieLineText(l)).repeat, rows: [{ chords: l.chords.slice(), repeat: 1, ref: li }] });
+  });
+  return out;
+}
+const _isRepMarker = t => /^\(?\s*(?:[×xхX*]\s*\d{1,2}|\d{1,2}\s*(?:раз|раза|times|x|х|×))\s*\)?$/i.test(String(t || '').trim());
+function _ieApplyLineSquares(b, squares) {
+  const byRef = new Map();
+  squares.forEach(sq => sq.rows.forEach(row => {
+    if (!byRef.has(row.ref)) byRef.set(row.ref, []);
+    byRef.get(row.ref).push({ chords: row.chords, rep: sq.repeat });
+  }));
+  const lines = [];
+  b.lines.forEach((l, li) => {
+    if (!l.chords.length) { lines.push(l); return; }
+    const outs = byRef.get(li) || [];
+    const origRep = CE.parseLine(_ieLineText(l)).repeat;
+    if (!outs.length) { if (l.lyric && !_isRepMarker(l.lyric)) lines.push({ ...l, chords: [] }); return; }
+    if (outs.length === 1 && outs[0].rep === origRep) { lines.push({ ...l, chords: outs[0].chords.slice() }); return; }
+    // повтор строки развёрнут (правили не все повторы) — строка становится несколькими
+    outs.forEach(o => { for (let k = 0; k < o.rep; k++) lines.push({ ...l, chords: o.chords.slice(), lyric: _isRepMarker(l.lyric) ? '' : l.lyric }); });
+  });
+  const fresh = byRef.get(undefined) || [];
+  fresh.reverse().forEach(o => lines.unshift({ chords: o.chords.slice(), lyric: o.rep > 1 ? 'x' + o.rep : '', raw: null }));
+  b.lines = lines;
+}
+let _ieSyncedNow = new Set();
+// квадраты → текст (в хранимой тональности; меняются только тронутые аккорды)
+function _syncLayoutToLines(bi, oldDisp, newDisp) {
+  const b = _ieBlocks[bi]; if (!b) return;
+  const r = CE.projectEdits(oldDisp.map(_ieStore), newDisp.map(_ieStore), _ieLinesAsSquares(b));
+  if (!r.applied) return;
+  _ieApplyLineSquares(b, r.squares);
+  _ieSyncedNow.add(bi);
+}
 function _ieCommit(fn) {
   _ieHistory.push(_ieSnapshot());
   if (_ieHistory.length > 80) _ieHistory.shift();
+  const before = _ieBlocks.map(_ieLinesSeq);
+  _ieSyncedNow = new Set();
   fn();
+  // текст → ручные квадраты (авто-квадраты и так считаются из текста)
+  _ieBlocks.forEach((b, bi) => {
+    if (_ieSyncedNow.has(bi) || !before[bi] || !_ceIsManual(bi)) return;
+    const now = _ieLinesSeq(b);
+    if (now.map(CE.chordKey).join(' ') === before[bi].map(CE.chordKey).join(' ') && now.join(' ') === before[bi].join(' ')) return;
+    const r = CE.projectEdits(before[bi].map(_ieDisp), now.map(_ieDisp), _ceGetSquares(bi));
+    if (r.applied) { _ceLayout[bi] = CE.normalizeSquares(r.squares); _ceReset.delete(bi); }
+  });
   _ieRedraw();
 }
 function _ieUndo() {
@@ -2789,7 +2925,12 @@ function _ieBuildLayout() {
   const keys = CE.blockKeys(_ieBlocks);
   const layout = {};
   _ieBlocks.forEach((b, bi) => {
-    if (_ceLayout[bi]) { const sq = CE.normalizeSquares(_ceLayout[bi]); if (sq.length) layout[bi] = CE.makeEntry(sq, keys[bi], _ieT, _ieN); return; }
+    if (_ceLayout[bi]) {
+      const sq = CE.normalizeSquares(_ceLayout[bi]);
+      // совпадает с автоматическим разбором текста — отдельно не храним
+      if (!sq.length || JSON.stringify(sq) === JSON.stringify(CE.normalizeSquares(_ceAutoSquares(bi)))) return;
+      layout[bi] = CE.makeEntry(sq, keys[bi], _ieT, _ieN); return;
+    }
     if (_ceReset.has(bi)) return;
     if (_ceOrig[bi]) layout[bi] = { ..._ceOrig[bi], key: keys[bi] };
   });
@@ -2860,7 +3001,15 @@ function _ceGetSquares(bi) {
   if (!_ceReset.has(bi) && _ceOrig[bi]) return CE.entrySquaresAt(_ceOrig[bi], _ieT, _ieN);
   return _ceAutoSquares(bi);
 }
-function _ceMutate(bi, fn) { _ieCommit(() => { _ceLayout[bi] = CE.normalizeSquares(fn(_ceGetSquares(bi))); _ceReset.delete(bi); }); }
+// sync: правка содержимого (аккорд заменён/добавлен/удалён/переставлен) — переносится в текст
+function _ceMutate(bi, fn, sync) {
+  _ieCommit(() => {
+    const before = _ceGetSquares(bi);
+    const after = CE.normalizeSquares(fn(before));
+    _ceLayout[bi] = after; _ceReset.delete(bi);
+    if (sync) _syncLayoutToLines(bi, CE.expandSquares(before), CE.expandSquares(after));
+  });
+}
 function _ceRenderEditor() {
   return _ieBlocks.map((b, bi) => {
     const squares = _ceGetSquares(bi);
@@ -2920,7 +3069,7 @@ $('song-content-inner').addEventListener('click', e => {
     case 'add-row': { const tonic = _ieTonic(); _ceMutate(bi, sq => CE.ops.addRow(sq, si, [tonic])); const s = _ceGetSquares(bi)[si]; return _ceOpenPopupAt(bi, si, s.rows.length - 1, 0); }
     case 'add-chord': {
       const tonic = _ieTonic();
-      _ceMutate(bi, sq => CE.ops.insertChord(sq, { si, ri, ci: null }, tonic));
+      _ceMutate(bi, sq => CE.ops.insertChord(sq, { si, ri, ci: null }, tonic), true);
       return _ceOpenPopupAt(bi, si, ri, _ceGetSquares(bi)[si].rows[ri].chords.length - 1);
     }
     case 'row-rep': return _ceMutate(bi, sq => CE.ops.setRowRepeat(sq, si, ri, sq[si].rows[ri].repeat >= 4 ? 1 : sq[si].rows[ri].repeat + 1));
@@ -3081,7 +3230,7 @@ function _ceApply(fn, reopen) {
   const p = _cePopupCtx; if (!p) return;
   _ieHidePopups();
   let next = null;
-  _ceMutate(p.bi, sq => { const r = fn(sq, p); if (r && r.squares) { next = r.pos; return r.squares; } return r; });
+  _ceMutate(p.bi, sq => { const r = fn(sq, p); if (r && r.squares) { next = r.pos; return r.squares; } return r; }, true);
   if (reopen && next) _ceOpenPopupAt(p.bi, next.si, next.ri, next.ci);
 }
 function _ceSetValue(v) {
@@ -3119,7 +3268,9 @@ $('ce-text-save').addEventListener('click', () => {
   const bi = _ceTextBi; if (bi < 0) return;
   const sq = CE.parseSquaresText($('ce-text-input').value);
   closeOverlay('overlay-ce-text');
-  _ceMutate(bi, () => sq);
+  // в тексте могли поменять и раскладку; в слова переносим, только если число аккордов то же (исправили названия)
+  const same = CE.expandSquares(sq).length === CE.expandSquares(_ceGetSquares(bi)).length;
+  _ceMutate(bi, () => sq, same);
 });
 
 // ─────────── нажатия: тап / удержание / перетаскивание ───────────
@@ -3216,10 +3367,13 @@ function _dragDrop(x, y) {
   const f = d.from;
   if (d.ce) {
     if (t.bi === f.bi && t.si === f.si && t.ri === f.ri && (t.ci === f.ci || t.ci === f.ci + 1)) return;
-    if (t.bi === f.bi) _ceMutate(f.bi, sq => CE.ops.moveChord(sq, f, t));
+    if (t.bi === f.bi) _ceMutate(f.bi, sq => CE.ops.moveChord(sq, f, t), true);
     else _ieCommit(() => {
-      const r = CE.ops.moveChordAcross(_ceGetSquares(f.bi), f, _ceGetSquares(t.bi), t);
+      const src0 = _ceGetSquares(f.bi), dst0 = _ceGetSquares(t.bi);
+      const r = CE.ops.moveChordAcross(src0, f, dst0, t);
       _ceLayout[f.bi] = r.src; _ceLayout[t.bi] = r.dst; _ceReset.delete(f.bi); _ceReset.delete(t.bi);
+      _syncLayoutToLines(f.bi, CE.expandSquares(src0), CE.expandSquares(r.src));
+      _syncLayoutToLines(t.bi, CE.expandSquares(dst0), CE.expandSquares(r.dst));
     });
     return;
   }
@@ -3455,34 +3609,60 @@ $('admin-create-link-btn').addEventListener('click', async () => {
 });
 
 // Вход по ссылке: j-<код> — вступить в команду, n-<код> — создать команду
-async function handleStartParam() {
-  const p = tg && tg.initDataUnsafe && tg.initDataUnsafe.start_param;
-  if (!p) return;
-  const used = LS.get('cb_used_start', []) || [];
-  if (used.includes(p)) return;
-  const remember = () => LS.set('cb_used_start', used.concat(p).slice(-20));
-  const m = /^([jn])-([a-z0-9]{8,32})$/.exec(p);
-  if (!m) return;
-  if (m[1] === 'j') {
-    const r = await api('POST', '/api/join', { code: m[2] });
-    if (!r.ok) { showToast(r.error, 5000); return; }
-    remember();
+// Код из ссылки: «https://t.me/бот?startapp=j-abc…», «j-abc…» или просто «abc…»
+function parseTeamLink(text) {
+  const t = String(text || '').trim();
+  const m = /(?:startapp=|^)([jn])-([a-z0-9]{8,32})\b/i.exec(t);
+  if (m) return { kind: m[1].toLowerCase(), code: m[2].toLowerCase() };
+  if (/^[a-z0-9]{8,32}$/i.test(t)) return { kind: 'j', code: t.toLowerCase() };
+  return null;
+}
+async function useTeamLink(kind, code, opts = {}) {
+  if (kind === 'j') {
+    const r = await api('POST', '/api/join', { code });
+    if (!r.ok) {
+      _joinError = r.status === 401 ? 'Откройте приложение через Telegram, чтобы вступить в команду' : r.error;
+      if (_noTeam) refreshVisible(); else showToast(r.error, 6000);
+      return false;
+    }
+    _joinError = '';
+    if (opts.remember) opts.remember();
     if (!_teams.some(t => t.id === r.data.team.id)) _teams.push(r.data.team);
     await switchTeam(r.data.team.id);
     showToast(r.data.alreadyMember ? `Вы уже в команде «${r.data.team.name}»` : `Вы вступили в команду «${r.data.team.name}»`, 4000);
-    return;
+    return true;
   }
-  // Окно не блокирует запуск: приложение грузится, пока человек вводит название (или нажмёт «Отмена»)
+  // n-<код>: создать новую команду. Окно не блокирует запуск приложения.
   showPrompt({ title: 'Создать команду', value: '', placeholder: 'Название, например «Молодёжка»', onOk: async v => {
-    const r = await api('POST', '/api/teams', { name: v, createCode: m[2] });
-    if (!r.ok) { showToast(r.error, 5000); return; }
-    remember();
+    const r = await api('POST', '/api/teams', { name: v, createCode: code });
+    if (!r.ok) { _joinError = r.error; if (_noTeam) refreshVisible(); showToast(r.error, 6000); return; }
+    _joinError = '';
+    if (opts.remember) opts.remember();
     _teams.push(r.data.team);
     await switchTeam(r.data.team.id);
     showToast(`Команда «${r.data.team.name}» создана`, 4000);
     openTeamDrawer();
   } });
+  return true;
 }
+// Вход по ссылке: j-<код> — вступить в команду, n-<код> — создать команду
+async function handleStartParam() {
+  const p = tg && tg.initDataUnsafe && tg.initDataUnsafe.start_param;
+  if (!p) return;
+  const used = LS.get('cb_used_start', []) || [];
+  if (used.includes(p)) return;
+  const parsed = parseTeamLink(p);
+  if (!parsed) return;
+  await useTeamLink(parsed.kind, parsed.code, { remember: () => LS.set('cb_used_start', used.concat(p).slice(-20)) });
+}
+document.addEventListener('click', async e => {
+  if (!e.target.closest('#join-btn')) return;
+  const inp = $('join-input');
+  const parsed = parseTeamLink(inp && inp.value);
+  if (!parsed) { _joinError = 'Не похоже на ссылку-приглашение. Скопируйте её из чата целиком'; refreshVisible(); return; }
+  e.target.closest('#join-btn').disabled = true;
+  await useTeamLink(parsed.kind, parsed.code);
+});
 
 // Скопировать песню в другую свою команду
 async function copySongToTeam(song, team) {

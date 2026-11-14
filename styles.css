@@ -601,3 +601,18 @@ body:not(.page-list) .team-bar { display: none !important; }
 .no-team { text-align: center; padding: 48px 24px; color: var(--muted); }
 .no-team h3 { color: var(--text); font-size: 18px; margin-bottom: 8px; }
 .no-team p { line-height: 1.55; }
+
+.join-box { display: flex; flex-direction: column; gap: 8px; max-width: 360px; margin: 18px auto 0; }
+.join-box .form-input { text-align: center; font-size: 14px; }
+.join-error { max-width: 360px; margin: 12px auto 0; padding: 10px 12px; border-radius: 12px; background: var(--surface); color: var(--danger); font-size: 14px; line-height: 1.45; }
+
+/* ── АККОРДЫ НАД СЛОВАМИ ── */
+.cl-line { display: flex; flex-wrap: wrap; align-items: flex-end; row-gap: 2px; }
+.cl-w { display: inline-flex; align-items: flex-end; }
+.cl-s { display: inline-flex; flex-direction: column; }
+.cl-c { font: 600 calc(var(--song-font, 15px) * 1.2)/1.15 var(--font-chord); color: var(--chord); min-height: 1.15em; padding-right: .3em; white-space: nowrap; }
+.cl-c.cl-free { width: 0; overflow: visible; }
+.cl-t { font-size: var(--song-font, 15px); line-height: 1.4; color: var(--text); white-space: pre; }
+.cl-line .repeat-badge { align-self: flex-end; margin-left: 6px; }
+.song-content.mode-words .cl-c { display: none; }
+body.theme-print .cl-c, body.theme-bw .cl-c { color: var(--text); font-weight: 800; }

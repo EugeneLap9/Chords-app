@@ -115,7 +115,20 @@
     if (m) { rep = ' ' + m[0].trim().replace(/[()]/g, ''); t = t.slice(0, m.index).trim(); }
     var toks = t.split(/\s+/).filter(Boolean);
     if (!toks.length || !toks.every(isChord)) return null;
-    return toks.map(function (c) { return '[' + c + ']'; }).join(' ') + rep;
+    // Сохраняем колонки: «[» встаёт туда, где стоял аккорд, — по ним аккорд ставится над словом
+    var src = String(line || '').replace(/[|‖]/g, ' ');
+    var out = '', re = /\S+/g, mm, idx = 0;
+    while ((mm = re.exec(src)) && idx < toks.length) {
+      if (mm[0] !== toks[idx]) continue;
+      // имя аккорда остаётся в своей колонке, «[» — на одну левее
+      var col = Math.max(mm.index - 1, out.length + (out.length ? 1 : 0), 0);
+      while (out.length < col) out += ' ';
+      out += '[' + toks[idx] + ']';
+      idx++;
+    }
+    // строка с тактовыми чертами — это схема, а не аккорды над словами: колонки не нужны
+    if (idx < toks.length || /[|‖]/.test(String(line))) out = toks.map(function (c) { return '[' + c + ']'; }).join(' ');
+    return out + rep;
   }
   // Метка блока без скобок: «Припев:», «1 куплет», «Verse 2:» → «Припев», «1 куплет», «Verse 2»
   var LABEL_WORDS_RE = new RegExp('^(?:\\d+\\s*[-.)]?\\s*)?(?:' + KNOWN_BLOCK_WORDS.map(function (w) { return w.replace(/-/g, '-?'); }).join('|') + ')(?:\\s*\\d+)?\\s*:?\\s*$', 'i');
@@ -190,7 +203,9 @@
           if (!aligned(end)) pen += 0.35;
           if (unitPenalty && L === 1 && kk < 3) pen += 0.6;   // «G G» не схлопываем в «G ×2»
           var c = L + repCost + pen + cost[end];
-          if (c < best - 1e-9) { best = c; ch = { L: L, k: kk }; }
+          // При равной цене повтор, начинающийся раньше, лучше «хвоста» перед ним:
+          // A D A D A → (A D)×2 A, а не A (D A)×2 — музыканты считают квадрат с начала
+          if (c < best - 1e-9 || (ch === null && c <= best + 1e-6)) { best = c; ch = { L: L, k: kk }; }
         }
       }
       cost[i] = best; choice[i] = ch;
@@ -247,6 +262,14 @@
         squares.push({ repeat: 1, rows: splitRows(part, rb).map(function (c) { return { chords: c, repeat: 1 }; }) });
         return;
       }
+      // Переносы строк внутри повтора учитываем, только если они одинаковы во всех
+      // повторениях; короткий повтор (до 4 аккордов) всегда одна строка: «A D ×2», а не «(A | D) ×2»
+      var consistent = true;
+      for (var r = 1; r < p.k; r++) {
+        if (relBounds(bounds, p.start + r * p.len, p.len).join() !== rb.join()) consistent = false;
+      }
+      if (p.len <= 4) rb = [];
+      else if (!consistent) { rb = []; for (var b4 = 4; b4 < p.len; b4 += 4) rb.push(b4); } // по 4 такта в строке
       // Повтор: внутри фразы ищем вложенные повторы (например (Am F)×2 C G)
       var inner = part.length >= 3 ? compressKeys(part.map(chordKey), rb) : [];
       var rows = [];
@@ -696,6 +719,228 @@
     return { patterns: patterns, sections: sections, letters: bySig, colors: colorBySig };
   }
 
+  // ─────────────────────── SYNC: правки аккордов между текстом и квадратами ───────────────────────
+  // Выравнивание двух последовательностей ключей (Левенштейн). subCost=2 — только совпадения (LCS).
+  // Правки (ins/del) при равной цене относятся к концу — так «добавил аккорд в конец» не уезжает в начало.
+  function alignOps(a, b, subCost) {
+    subCost = subCost == null ? 1 : subCost;
+    var n = a.length, m = b.length;
+    if ((n + 1) * (m + 1) > 4000000) return null;
+    var W = m + 1, D = new Int32Array((n + 1) * W), i, j;
+    for (i = 0; i <= n; i++) D[i * W] = i;
+    for (j = 0; j <= m; j++) D[j] = j;
+    for (i = 1; i <= n; i++) for (j = 1; j <= m; j++) {
+      var d = D[(i - 1) * W + j - 1] + (a[i - 1] === b[j - 1] ? 0 : subCost);
+      var u = D[(i - 1) * W + j] + 1, l = D[i * W + j - 1] + 1;
+      D[i * W + j] = d < u ? (d < l ? d : l) : (u < l ? u : l);
+    }
+    var ops = []; i = n; j = m;
+    while (i > 0 || j > 0) {
+      var cur = D[i * W + j];
+      if (j > 0 && cur === D[i * W + j - 1] + 1) { ops.push({ t: 'ins', i: i, j: j - 1 }); j--; }
+      else if (i > 0 && cur === D[(i - 1) * W + j] + 1) { ops.push({ t: 'del', i: i - 1 }); i--; }
+      else { ops.push({ t: a[i - 1] === b[j - 1] ? 'eq' : 'sub', i: i - 1, j: j - 1 }); i--; j--; }
+    }
+    return ops.reverse();
+  }
+  function seqKeys(arr) { return (arr || []).map(chordKey); }
+  // Развёртка квадратов с привязкой каждой позиции к ячейке (квадрат, строка, аккорд)
+  function expandSlots(squares) {
+    var out = [];
+    squares.forEach(function (sq, si) {
+      for (var a = 0; a < clampRep(sq.repeat); a++) sq.rows.forEach(function (r, ri) {
+        for (var b = 0; b < clampRep(r.repeat); b++) r.chords.forEach(function (c, ci) { out.push({ si: si, ri: ri, ci: ci, chord: c }); });
+      });
+    });
+    return out;
+  }
+  function unrollSquare(sq) {
+    var rows = [];
+    for (var a = 0; a < clampRep(sq.repeat); a++) sq.rows.forEach(function (r) {
+      for (var b = 0; b < clampRep(r.repeat); b++) rows.push({ chords: r.chords.slice(), repeat: 1, ref: r.ref });
+    });
+    return { repeat: 1, rows: rows };
+  }
+  // Переносит правки (oldSeq → newSeq) на другую структуру квадратов target.
+  // Позиции target сопоставляются со старой последовательностью; замены, удаления и вставки
+  // применяются к ячейкам. Если ячейка повторяется (×2), а правка затронула не все повторы —
+  // такой квадрат разворачивается, чтобы звучание совпало. Поле ref у строк сохраняется.
+  function projectEdits(oldSeq, newSeq, target) {
+    var sq = clone(target || []);
+    var tExp = expandSlots(sq);
+    var oldK = seqKeys(oldSeq), newK = seqKeys(newSeq), tK = tExp.map(function (x) { return chordKey(x.chord); });
+    var map = [], i;
+    for (i = 0; i < oldK.length; i++) map.push(-1);
+    if (oldK.join('\u0001') === tK.join('\u0001')) { for (i = 0; i < map.length; i++) map[i] = i; }
+    else {
+      var al = alignOps(oldK, tK, 2);
+      if (!al) return { squares: sq, applied: 0, unmapped: oldK.length };
+      al.forEach(function (o) { if (o.t === 'eq') map[o.i] = o.j; });
+    }
+    var edits = alignOps(oldK, newK, 1);
+    if (!edits) return { squares: sq, applied: 0, unmapped: 0 };
+    var posEdit = {}, insAfter = {}, insBefore = {}, insEmpty = [], applied = 0, unmapped = 0;
+    edits.forEach(function (o) {
+      if (o.t === 'eq') {
+        // та же нота другим написанием (A# → Bb) — берём новое написание
+        if (map[o.i] >= 0 && oldSeq[o.i] !== newSeq[o.j] && tExp[map[o.i]].chord !== newSeq[o.j]) { posEdit[map[o.i]] = { sub: newSeq[o.j] }; applied++; }
+        return;
+      }
+      if (o.t === 'sub' || o.t === 'del') {
+        var p = map[o.i];
+        if (p < 0) { unmapped++; return; }
+        posEdit[p] = o.t === 'sub' ? { sub: newSeq[o.j] } : { del: true };
+        applied++;
+        return;
+      }
+      var k, done = false;
+      for (k = o.i - 1; k >= 0 && !done; k--) if (map[k] >= 0) { (insAfter[map[k]] = insAfter[map[k]] || []).push(newSeq[o.j]); done = true; }
+      for (k = o.i; k < map.length && !done; k++) if (map[k] >= 0) { (insBefore[map[k]] = insBefore[map[k]] || []).push(newSeq[o.j]); done = true; }
+      if (!done) { if (tExp.length) { unmapped++; return; } insEmpty.push(newSeq[o.j]); }
+      applied++;
+    });
+    if (!applied) return { squares: sq, applied: 0, unmapped: unmapped };
+    function sig(p) {
+      var e = posEdit[p];
+      return (e ? (e.del ? 'D' : 'S' + e.sub) : 'K') + '|' + (insAfter[p] || []).join(',') + '|' + (insBefore[p] || []).join(',');
+    }
+    // конфликт: одна и та же ячейка (из-за повтора) должна измениться по-разному → разворачиваем квадрат.
+    // Учитываем только позиции, сопоставленные с исходником: остальные (лишние повторы) нейтральны.
+    var mapped = {};
+    map.forEach(function (p) { if (p >= 0) mapped[p] = true; });
+    var bySlot = {}, bad = {};
+    tExp.forEach(function (x, p) { if (!mapped[p]) return; var key = x.si + ':' + x.ri + ':' + x.ci; (bySlot[key] = bySlot[key] || []).push(p); });
+    Object.keys(bySlot).forEach(function (key) {
+      var ps = bySlot[key], s0 = sig(ps[0]);
+      for (var t = 1; t < ps.length; t++) if (sig(ps[t]) !== s0) { bad[tExp[ps[0]].si] = true; break; }
+    });
+    sq = sq.map(function (q, si) { return bad[si] ? unrollSquare(q) : q; });
+    tExp = expandSlots(sq);
+    var first = {};
+    tExp.forEach(function (x, p) { var key = x.si + ':' + x.ri + ':' + x.ci; if (!(key in first) || (mapped[p] && !mapped[first[key]])) first[key] = p; });
+    var out = sq.map(function (q, si) {
+      return { repeat: q.repeat, rows: q.rows.map(function (r, ri) {
+        var chords = [];
+        r.chords.forEach(function (c, ci) {
+          var p = first[si + ':' + ri + ':' + ci], e = posEdit[p];
+          (insBefore[p] || []).forEach(function (v) { chords.push(v); });
+          if (!e) chords.push(c); else if (!e.del) chords.push(e.sub);
+          (insAfter[p] || []).forEach(function (v) { chords.push(v); });
+        });
+        return { chords: chords, repeat: r.repeat, ref: r.ref };
+      }).filter(function (r) { return r.chords.length; }) };
+    }).filter(function (q) { return q.rows.length; });
+    if (insEmpty.length) out.push({ repeat: 1, rows: [{ chords: insEmpty, repeat: 1 }] });
+    return { squares: out, applied: applied, unmapped: unmapped };
+  }
+
+  // Аккорды строки текста с их местом: off — позиция в тексте без аккордов, col — колонка в строке
+  function chordTokens(raw) {
+    var out = [], text = '', last = 0, re = /\[([^\]]+)\]/g, m;
+    raw = String(raw || '');
+    while ((m = re.exec(raw))) {
+      var inner = m[1].trim();
+      if (!isChord(inner)) continue;
+      text += raw.slice(last, m.index);
+      out.push({ chord: inner, off: text.length, col: m.index, end: m.index + m[0].length });
+      last = m.index + m[0].length;
+    }
+    text += raw.slice(last);
+    return { tokens: out, text: text };
+  }
+  function isChordOnlyText(text) { var t = String(text || '').trim(); return !t || LINE_REPEAT_RE.test(t); }
+  function nextWordStart(text, off) {
+    var i = off;
+    while (i < text.length && !/\s/.test(text[i])) i++;
+    while (i < text.length && /\s/.test(text[i])) i++;
+    return i;
+  }
+  // Новые аккорды в строке с сохранением мест: заменённый аккорд остаётся над тем же словом,
+  // добавленный встаёт за предыдущим, удалённый просто исчезает. Строка аккордов над текстом
+  // сохраняет колонки, чтобы аккорды не съезжали относительно слов ниже.
+  function applyChordsToRaw(raw, newChords) {
+    raw = String(raw || '');
+    var parsed = chordTokens(raw), toks = parsed.tokens, text = parsed.text;
+    newChords = (newChords || []).slice();
+    if (toks.map(function (t) { return t.chord; }).join('\u0001') === newChords.join('\u0001')) return raw;
+    var ops = alignOps(seqKeys(toks.map(function (t) { return t.chord; })), seqKeys(newChords), 1) || [];
+    var items = [];
+    ops.forEach(function (o) {
+      if (o.t === 'del') return;
+      if (o.t === 'ins') items.push({ chord: newChords[o.j], ins: true });
+      else items.push({ chord: newChords[o.j], off: toks[o.i].off, col: toks[o.i].col });
+    });
+    if (isChordOnlyText(text)) {
+      if (!items.length) return '';
+      // строка выровнена над текстом (отступ или пробелы шире одного) — держим колонки; иначе просто через пробел
+      var aligned = toks.length && (toks[0].col > 0 || toks.some(function (t, n) { return n > 0 && t.col - toks[n - 1].end > 1; }));
+      var out = '';
+      items.forEach(function (it) {
+        var want = !aligned || it.ins || it.col == null ? out.length + (out.length ? 1 : 0) : it.col;
+        var col = Math.max(want, out.length + (out.length ? 1 : 0));
+        while (out.length < col) out += ' ';
+        out += '[' + it.chord + ']';
+      });
+      var tail = toks.length ? raw.slice(toks[toks.length - 1].end) : '';
+      if (tail.trim()) out += /^\s/.test(tail) ? tail : ' ' + tail;
+      return out;
+    }
+    var prevOff = 0, res = '', cursor = 0;
+    items.forEach(function (it, n) {
+      var off = it.ins ? (n === 0 ? 0 : nextWordStart(text, prevOff)) : it.off;
+      if (it.ins && n === 0 && items[1] && !items[1].ins) off = 0;
+      off = Math.max(off, prevOff);
+      var gap = it.ins && off >= text.length && text.length && !/\s$/.test(text) && cursor <= off ? ' ' : '';
+      res += text.slice(cursor, off) + gap + '[' + it.chord + ']';
+      cursor = off; prevOff = off;
+    });
+    return res + text.slice(cursor);
+  }
+
+  // Раскладка строк блока для показа «аккорд над словом».
+  // → [{ text, chords: [{chord, at}], repeat }]; строка аккордов над строкой текста
+  //   объединяется с ней: аккорд встаёт на начало слова под своей колонкой.
+  // Колонка → ближайшее начало слова (аккорд над словом, а не посреди него)
+  function snapToWord(txt, col) {
+    if (col <= 0) return 0;
+    if (col >= txt.length) return txt.length;
+    var left = col; while (left > 0 && !/\s/.test(txt[left - 1])) left--;
+    if (/\s/.test(txt[col])) left = -1;
+    var right = col; while (right < txt.length && !/\s/.test(txt[right])) right++;
+    while (right < txt.length && /\s/.test(txt[right])) right++;
+    if (right >= txt.length && left < 0) return txt.length;
+    if (left < 0) return right;
+    if (right >= txt.length) return left;
+    return col - left <= right - col ? left : right;
+  }
+  function chordLines(lines) {
+    var out = [];
+    lines = lines || [];
+    for (var i = 0; i < lines.length; i++) {
+      var raw = String(lines[i] || '');
+      if (!raw.trim()) continue;
+      var p = chordTokens(raw), toks = p.tokens;
+      if (!toks.length) { out.push({ text: raw.trim(), chords: [], repeat: 1 }); continue; }
+      if (isChordOnlyText(p.text)) {
+        var rep = parseLine(raw).repeat, next = lines[i + 1];
+        var np = next != null && String(next).trim() ? chordTokens(next) : null;
+        if (rep === 1 && np && !np.tokens.length && !/^\s*\[[^\]]+\]\s*$/.test(next)) {
+          var lead = String(next).length - String(next).replace(/^\s+/, '').length;
+          var txt = String(next).trim();
+          out.push({ text: txt, chords: toks.map(function (t) { return { chord: t.chord, at: snapToWord(txt, t.col + 1 - lead) }; }), repeat: 1 });
+          i++;
+          continue;
+        }
+        out.push({ text: '', chords: toks.map(function (t) { return { chord: t.chord, at: 0 }; }), repeat: rep });
+        continue;
+      }
+      var lead2 = p.text.length - p.text.replace(/^\s+/, '').length;
+      var txt2 = p.text.trim();
+      out.push({ text: txt2, chords: toks.map(function (t) { return { chord: t.chord, at: Math.max(0, Math.min(txt2.length, t.off - lead2)) }; }), repeat: 1 });
+    }
+    return out;
+  }
+
   // ─────────────────────── EDITOR OPS (pure) ───────────────────────
   // Путь аккорда: {si, ri, ci}. Все операции возвращают новые квадраты.
   function rowAt(sq, si, ri) { return sq[si] && sq[si].rows[ri]; }
@@ -890,6 +1135,8 @@
     parseSquaresText: parseSquaresText, squaresToText: squaresToText,
     parseChordsOnlyText: parseChordsOnlyText, buildLayoutFromText: buildLayoutFromText, layoutToText: layoutToText,
     analyzeSong: analyzeSong, songForm: songForm,
+    alignOps: alignOps, projectEdits: projectEdits, chordTokens: chordTokens, applyChordsToRaw: applyChordsToRaw,
+    chordLines: chordLines, snapToWord: snapToWord,
     ops: {
       setChord: setChord, insertChord: insertChord, removeChord: removeChord, moveChord: moveChord,
       moveChordAcross: moveChordAcross, shiftChord: shiftChord, splitRow: splitRow, mergeRowUp: mergeRowUp,
