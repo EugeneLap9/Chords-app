@@ -581,7 +581,9 @@
     var out = [];
     (blocks || []).forEach(function (b, bi) {
       var manual = !!resolved[bi];
-      var squares = manual ? entrySquaresAt(resolved[bi], transpose, notation) : analyzeBlock(b.lines);
+      var squares = manual ? reskinSquares(entrySquaresAt(resolved[bi], transpose, notation), blockSequence(b.lines).seq) : analyzeBlock(b.lines);
+      // ручная раскладка, совпавшая с автоматической, — не «свои квадраты»
+      if (manual && JSON.stringify(squares) === JSON.stringify(analyzeBlock(b.lines))) manual = false;
       var sig = expandSquares(squares).map(chordKey).join(' ');
       var repeatOf = null;
       if (sig) {
@@ -834,6 +836,37 @@
     return { squares: out, applied: applied, unmapped: unmapped };
   }
 
+  // Аккорды всегда из текста песни: ручные квадраты задают только раскладку (повторы, строки).
+  // Старая раскладка, расходящаяся с текстом (правки до синхронизации, ошибка AI), получает
+  // аккорды из текста; ячейка меняется, только если все её повторы указывают на одно и то же.
+  function reskinSquares(squares, textSeq) {
+    var exp = expandSlots(squares || []);
+    if (!exp.length || !textSeq || !textSeq.length) return squares;
+    var ek = exp.map(function (x) { return chordKey(x.chord); }), tk = seqKeys(textSeq);
+    if (ek.join('\u0001') === tk.join('\u0001')) return squares;
+    // Сопоставляем позиция в позицию: число аккордов совпадает, или текст записан
+    // один раз, а раскладка играет его ×N. Иначе раскладка устроена по-другому — не трогаем.
+    if (exp.length % tk.length !== 0) return squares;
+    var vals = {};
+    exp.forEach(function (x, p) {
+      var key = x.si + ':' + x.ri + ':' + x.ci;
+      (vals[key] = vals[key] || []).push(textSeq[p % textSeq.length]);
+    });
+    var changed = false;
+    var out = squares.map(function (sq, si) {
+      return { repeat: sq.repeat, rows: sq.rows.map(function (r, ri) {
+        return { chords: r.chords.map(function (c, ci) {
+          var v = vals[si + ':' + ri + ':' + ci];
+          // все повторы ячейки должны указывать на один аккорд, иначе ячейку не трогаем
+          if (!v || !v.every(function (y) { return chordKey(y) === chordKey(v[0]); })) return c;
+          if (chordKey(v[0]) !== chordKey(c)) { changed = true; return v[0]; }
+          return c;
+        }), repeat: r.repeat };
+      }) };
+    });
+    return changed ? out : squares;
+  }
+
   // Аккорды строки текста с их местом: off — позиция в тексте без аккордов, col — колонка в строке
   function chordTokens(raw) {
     var out = [], text = '', last = 0, re = /\[([^\]]+)\]/g, m;
@@ -913,6 +946,12 @@
     if (right >= txt.length) return left;
     return col - left <= right - col ? left : right;
   }
+  // колонка аккорда в строке над текстом → позиция в тексте ниже
+  function colToAt(txt, col) {
+    var c = col + 1; // имя аккорда начинается за «[»
+    if (c < txt.length && /\s/.test(txt[c]) && c > 0 && !/\s/.test(txt[c - 1])) c--; // однобуквенное слово («В»)
+    return snapToWord(txt, c);
+  }
   function chordLines(lines) {
     var out = [];
     lines = lines || [];
@@ -924,10 +963,14 @@
       if (isChordOnlyText(p.text)) {
         var rep = parseLine(raw).repeat, next = lines[i + 1];
         var np = next != null && String(next).trim() ? chordTokens(next) : null;
-        if (rep === 1 && np && !np.tokens.length && !/^\s*\[[^\]]+\]\s*$/.test(next)) {
-          var lead = String(next).length - String(next).replace(/^\s+/, '').length;
-          var txt = String(next).trim();
-          out.push({ text: txt, chords: toks.map(function (t) { return { chord: t.chord, at: snapToWord(txt, t.col + 1 - lead) }; }), repeat: 1 });
+        // строка аккордов над строкой текста (в тексте могут быть и свои аккорды) — объединяем
+        if (rep === 1 && np && !isChordOnlyText(np.text) && !/^\s*\[[^\]]+\]\s*$/.test(next)) {
+          var lead = np.text.length - np.text.replace(/^\s+/, '').length;
+          var txt = np.text.trim();
+          var chords = toks.map(function (t) { return { chord: t.chord, at: colToAt(txt, t.col - lead) }; })
+            .concat(np.tokens.map(function (t) { return { chord: t.chord, at: Math.max(0, Math.min(txt.length, t.off - lead)) }; }));
+          chords.sort(function (x, y) { return x.at - y.at; });
+          out.push({ text: txt, chords: chords, repeat: 1 });
           i++;
           continue;
         }
@@ -940,6 +983,7 @@
     }
     return out;
   }
+
 
   // ─────────────────────── EDITOR OPS (pure) ───────────────────────
   // Путь аккорда: {si, ri, ci}. Все операции возвращают новые квадраты.
@@ -1135,7 +1179,7 @@
     parseSquaresText: parseSquaresText, squaresToText: squaresToText,
     parseChordsOnlyText: parseChordsOnlyText, buildLayoutFromText: buildLayoutFromText, layoutToText: layoutToText,
     analyzeSong: analyzeSong, songForm: songForm,
-    alignOps: alignOps, projectEdits: projectEdits, chordTokens: chordTokens, applyChordsToRaw: applyChordsToRaw,
+    alignOps: alignOps, projectEdits: projectEdits, reskinSquares: reskinSquares, chordTokens: chordTokens, applyChordsToRaw: applyChordsToRaw,
     chordLines: chordLines, snapToWord: snapToWord,
     ops: {
       setChord: setChord, insertChord: insertChord, removeChord: removeChord, moveChord: moveChord,

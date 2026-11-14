@@ -2932,7 +2932,11 @@ function _ieBuildLayout() {
       layout[bi] = CE.makeEntry(sq, keys[bi], _ieT, _ieN); return;
     }
     if (_ceReset.has(bi)) return;
-    if (_ceOrig[bi]) layout[bi] = { ..._ceOrig[bi], key: keys[bi] };
+    if (_ceOrig[bi]) {
+      // сохраняем раскладку уже с аккордами из текста — устаревшие данные «лечатся» при сохранении
+      if (!_ceIsManual(bi)) return;
+      layout[bi] = CE.makeEntry(CE.normalizeSquares(_ceGetSquares(bi)), keys[bi], _ieT, _ieN);
+    }
   });
   return CE.compactLayout(layout);
 }
@@ -2995,10 +2999,16 @@ function _ceAutoSquares(bi) {
   // текст строки передаём тоже: в нём может быть «x2» — повтор строки
   return CE.analyzeBlock(b.lines.map(l => l.chords.map(c => '[' + _ieDisp(c) + ']').join(' ') + ' ' + l.lyric));
 }
-function _ceIsManual(bi) { return !!_ceLayout[bi] || (!_ceReset.has(bi) && !!_ceOrig[bi]); }
+function _ceIsManual(bi) {
+  if (_ceLayout[bi]) return true;
+  if (_ceReset.has(bi) || !_ceOrig[bi]) return false;
+  // старая раскладка, после подстановки аккордов из текста совпавшая с авто, — уже не ручная
+  return JSON.stringify(CE.normalizeSquares(_ceGetSquares(bi))) !== JSON.stringify(CE.normalizeSquares(_ceAutoSquares(bi)));
+}
 function _ceGetSquares(bi) {
   if (_ceLayout[bi]) return _ceLayout[bi];
-  if (!_ceReset.has(bi) && _ceOrig[bi]) return CE.entrySquaresAt(_ceOrig[bi], _ieT, _ieN);
+  // аккорды — из текста; ручная раскладка задаёт только повторы и строки
+  if (!_ceReset.has(bi) && _ceOrig[bi]) return CE.reskinSquares(CE.entrySquaresAt(_ceOrig[bi], _ieT, _ieN), _ieLinesSeq(_ieBlocks[bi]).map(_ieDisp));
   return _ceAutoSquares(bi);
 }
 // sync: правка содержимого (аккорд заменён/добавлен/удалён/переставлен) — переносится в текст

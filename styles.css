@@ -612,7 +612,7 @@ body:not(.page-list) .team-bar { display: none !important; }
 .cl-s { display: inline-flex; flex-direction: column; }
 .cl-c { font: 600 calc(var(--song-font, 15px) * 1.2)/1.15 var(--font-chord); color: var(--chord); min-height: 1.15em; padding-right: .3em; white-space: nowrap; }
 .cl-c.cl-free { width: 0; overflow: visible; }
-.cl-t { font-size: var(--song-font, 15px); line-height: 1.4; color: var(--text); white-space: pre; }
+.cl-t { font-size: var(--song-font, 15px); line-height: 1.4; min-height: 1.4em; color: var(--text); white-space: pre; }
 .cl-line .repeat-badge { align-self: flex-end; margin-left: 6px; }
 .song-content.mode-words .cl-c { display: none; }
 body.theme-print .cl-c, body.theme-bw .cl-c { color: var(--text); font-weight: 800; }
