@@ -616,3 +616,6 @@ body:not(.page-list) .team-bar { display: none !important; }
 .cl-line .repeat-badge { align-self: flex-end; margin-left: 6px; }
 .song-content.mode-words .cl-c { display: none; }
 body.theme-print .cl-c, body.theme-bw .cl-c { color: var(--text); font-weight: 800; }
+/* часть без аккордов — только заголовок в структуре */
+.chords-only-block.is-empty { opacity: .75; }
+.chords-only-block.is-empty .chords-only-header { margin-bottom: 0; }

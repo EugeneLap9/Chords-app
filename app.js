@@ -985,7 +985,7 @@ function scheduleFit() {
 }
 if (document.fonts && document.fonts.ready) document.fonts.ready.then(scheduleFit).catch(() => {});
 
-function partWeight(a) { return Math.max(1, CE.expandSquares(a.squares).length); }
+function partWeight(a) { return a.squares.length ? Math.max(1, CE.expandSquares(a.squares).length) : 3; }
 // Карта песни: полоса, где ширина части = число тактов × повторы
 function songMapHtml(items, analysis, editable, custom, withChart) {
   if (!items.length) return '';
@@ -1012,8 +1012,14 @@ function renderChordsOnly(song, blocks, transpose, notation) {
   const chartHtml = chart.patterns.length >= 2 ? renderChart(chart) : '';
   const body = items.map((it, i) => {
     const a = analysis[it.bi];
-    if (!a || !a.squares.length) return '';
+    if (!a) return '';
     const color = getBlockColor(a.label, it.bi);
+    if (!a.squares.length) {
+      if (!a.label) return '';
+      const times0 = it.repeat > 1 ? `<span class="cs-times-badge">×${it.repeat}</span>` : '';
+      return `<div class="chords-only-block is-empty" id="co-item-${i}" data-orig-bi="${it.bi}" style="--block-color:${color}">
+      <div class="chords-only-header"><span class="chords-only-label">${escapeHtml(a.label)}</span>${times0}<span class="cs-repeat-note">без аккордов</span></div></div>`;
+    }
     const firstLabel = shown.get(a.sig);
     const isRepeat = firstLabel !== undefined;
     if (!isRepeat) shown.set(a.sig, a.label || 'выше');
@@ -1037,7 +1043,7 @@ function renderChart(chart) {
       <div class="cs-pattern-body">${CE.squaresToHtml([p.square])}</div></div>`).join('');
   const rows = chart.sections.map(sec => `<button class="cs-form-row" data-goto-item="${sec.item}" style="--block-color:${getBlockColor(sec.label, sec.bi)}">
       <span class="cs-form-label">${escapeHtml(sec.label || 'Без метки')}${sec.repeat > 1 ? ` <b>×${sec.repeat}</b>` : ''}</span>
-      <span class="cs-form-seq">${sec.seq.map(x => `<span class="cs-seq-chip" data-c="${x.color}">${x.letter}${x.repeat > 1 ? `<b>×${x.repeat}</b>` : ''}</span>`).join('')}</span></button>`).join('');
+      <span class="cs-form-seq">${sec.empty ? '<span class="cs-repeat-note">—</span>' : ''}${sec.seq.map(x => `<span class="cs-seq-chip" data-c="${x.color}">${x.letter}${x.repeat > 1 ? `<b>×${x.repeat}</b>` : ''}</span>`).join('')}</span></button>`).join('');
   return `<div class="cs-chart"><div class="chords-only-block cs-chart-block" style="--block-color:var(--muted)">
       <div class="chords-only-header"><span class="chords-only-label">Квадраты песни</span></div>
       <div class="chords-only-rows-wrap">${pats}</div></div>
@@ -2860,9 +2866,16 @@ function _ieApplyLineSquares(b, squares) {
 }
 let _ieSyncedNow = new Set();
 // квадраты → текст (в хранимой тональности; меняются только тронутые аккорды)
-function _syncLayoutToLines(bi, oldDisp, newDisp) {
+// Правка квадратов → аккорды в словах (по ячейкам; смена повторов/строк слова не трогает)
+let _ieMismatchWarned = false;
+function _syncLayoutToLines(bi, oldSq, newSq) {
   const b = _ieBlocks[bi]; if (!b) return;
-  const r = CE.projectEdits(oldDisp.map(_ieStore), newDisp.map(_ieStore), _ieLinesAsSquares(b));
+  const st = sq => (sq || []).map(q => ({ ...q, rows: q.rows.map(r => ({ ...r, chords: r.chords.map(_ieStore) })) }));
+  const r = CE.projectSlotEdits(st(oldSq), st(newSq), _ieLinesAsSquares(b));
+  if (r.mismatch && !_ieMismatchWarned) {
+    _ieMismatchWarned = true;
+    showToast('Слова не изменены: квадраты этого блока не совпадают с аккордами в тексте');
+  }
   if (!r.applied) return;
   _ieApplyLineSquares(b, r.squares);
   _ieSyncedNow.add(bi);
@@ -2893,6 +2906,7 @@ function toggleInlineEdit(song) { if (_inlineEditActive) cancelInlineEdit(); els
 function startInlineEdit(song) {
   _inlineEditActive = true;
   _inlineEditSong = song;
+  _ieMismatchWarned = false;
   _ieT = transposeOffset; _ieN = getSongNotation(song.id);
   _ieBlocks = _ieParseBlocks(song.lyrics);
   _ceOrig = CE.resolveLayout(song.chordsOnlyLayout, parseSong(song.lyrics, 0));
@@ -3017,7 +3031,7 @@ function _ceMutate(bi, fn, sync) {
     const before = _ceGetSquares(bi);
     const after = CE.normalizeSquares(fn(before));
     _ceLayout[bi] = after; _ceReset.delete(bi);
-    if (sync) _syncLayoutToLines(bi, CE.expandSquares(before), CE.expandSquares(after));
+    if (sync) _syncLayoutToLines(bi, before, after);
   });
 }
 function _ceRenderEditor() {
@@ -3278,9 +3292,8 @@ $('ce-text-save').addEventListener('click', () => {
   const bi = _ceTextBi; if (bi < 0) return;
   const sq = CE.parseSquaresText($('ce-text-input').value);
   closeOverlay('overlay-ce-text');
-  // в тексте могли поменять и раскладку; в слова переносим, только если число аккордов то же (исправили названия)
-  const same = CE.expandSquares(sq).length === CE.expandSquares(_ceGetSquares(bi)).length;
-  _ceMutate(bi, () => sq, same);
+  // в тексте могли поменять и раскладку (повторы, строки) — в слова переносятся только правки самих аккордов
+  _ceMutate(bi, () => sq, true);
 });
 
 // ─────────── нажатия: тап / удержание / перетаскивание ───────────
@@ -3382,8 +3395,8 @@ function _dragDrop(x, y) {
       const src0 = _ceGetSquares(f.bi), dst0 = _ceGetSquares(t.bi);
       const r = CE.ops.moveChordAcross(src0, f, dst0, t);
       _ceLayout[f.bi] = r.src; _ceLayout[t.bi] = r.dst; _ceReset.delete(f.bi); _ceReset.delete(t.bi);
-      _syncLayoutToLines(f.bi, CE.expandSquares(src0), CE.expandSquares(r.src));
-      _syncLayoutToLines(t.bi, CE.expandSquares(dst0), CE.expandSquares(r.dst));
+      _syncLayoutToLines(f.bi, src0, r.src);
+      _syncLayoutToLines(t.bi, dst0, r.dst);
     });
     return;
   }

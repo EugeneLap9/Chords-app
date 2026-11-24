@@ -591,7 +591,20 @@
           if (out[j].sig === sig && genericLabel(out[j].label) === genericLabel(b.label)) { repeatOf = out[j].repeatOf != null ? out[j].repeatOf : out[j].bi; break; }
         }
       }
-      out.push({ bi: bi, label: b.label || '', squares: squares, manual: manual, repeatOf: repeatOf, sig: sig });
+      var item = { bi: bi, label: b.label || '', squares: squares, manual: manual, repeatOf: repeatOf, sig: sig };
+      // Блок без аккордов, но с меткой («[Припев]» без текста или куплет только со словами):
+      // в структуре он есть. Если такая часть уже звучала с аккордами — играем те же аккорды.
+      if (!sig && item.label) {
+        var g = genericLabel(item.label), src = null;
+        for (var k = out.length - 1; k >= 0; k--) {
+          if (out[k].sig && !out[k].inherited && genericLabel(out[k].label) === g) { src = out[k]; break; }
+        }
+        if (src) {
+          item.squares = clone(src.squares); item.sig = src.sig; item.inherited = true;
+          item.repeatOf = src.repeatOf != null ? src.repeatOf : src.bi;
+        } else item.empty = true;
+      }
+      out.push(item);
     });
     return out;
   }
@@ -628,7 +641,7 @@
     var keys = blockKeys(blocks), out = [];
     var lastA = null;
     (analysis || []).forEach(function (a) {
-      if (!a.sig) return; // блоки только со словами в режиме «Аккорды» не играются
+      if (!a.sig && !a.label) return; // безымянный блок только со словами в режиме «Аккорды» не играется
       if (lastA && lastA.sig === a.sig && genericLabel(lastA.label) === genericLabel(a.label)) { out[out.length - 1].repeat++; return; }
       out.push({ ref: keys[a.bi], repeat: 1 });
       lastA = a;
@@ -636,9 +649,17 @@
     return out;
   }
   // → [{ bi, ref, repeat }] только существующие части; пусто → порядок по тексту
+  // Порядок «по тексту» из прежних версий (там части без аккордов не попадали в порядок)
+  function legacyDefaultArrangement(blocks, analysis) {
+    return defaultArrangement(blocks, (analysis || []).filter(function (a) { return a.sig && !a.inherited; }));
+  }
+  function isLegacyDefault(src, blocks, analysis) {
+    return src.length > 0 && JSON.stringify(src) === JSON.stringify(legacyDefaultArrangement(blocks, analysis));
+  }
   function resolveArrangement(arr, blocks, analysis) {
     var keys = blockKeys(blocks);
     var src = normalizeArrangement(arr);
+    if (isLegacyDefault(src, blocks, analysis)) src = [];
     var res = [];
     src.forEach(function (it) { var bi = keys.indexOf(it.ref); if (bi >= 0) res.push({ bi: bi, ref: it.ref, repeat: it.repeat }); });
     if (!res.length) {
@@ -647,12 +668,17 @@
     return res;
   }
   function isDefaultArrangement(arr, blocks, analysis) {
-    return JSON.stringify(normalizeArrangement(arr)) === JSON.stringify(defaultArrangement(blocks, analysis));
+    var src = normalizeArrangement(arr);
+    return JSON.stringify(src) === JSON.stringify(defaultArrangement(blocks, analysis)) || isLegacyDefault(src, blocks, analysis);
   }
   // Части, из которых можно собирать порядок (без дублей-повторов)
   function uniqueParts(blocks, analysis) {
     var keys = blockKeys(blocks);
-    return (analysis || []).filter(function (a) { return a.sig && a.repeatOf == null; })
+    var seenEmpty = {};
+    return (analysis || []).filter(function (a) {
+      if (a.empty) { var g = genericLabel(a.label); if (seenEmpty[g]) return false; seenEmpty[g] = 1; return true; }
+      return a.sig && a.repeatOf == null;
+    })
       .map(function (a) { return { bi: a.bi, ref: keys[a.bi], label: a.label || 'Без метки' }; });
   }
   // После правки текста: ссылки на исчезнувшие блоки отбрасываются;
@@ -708,7 +734,11 @@
     }
     var sections = [];
     (items || []).forEach(function (it, i) {
-      var a = analysis[it.bi]; if (!a || !a.squares.length) return;
+      var a = analysis[it.bi]; if (!a) return;
+      if (!a.squares.length) {
+        if (a.label) sections.push({ item: i, bi: it.bi, label: a.label, repeat: it.repeat || 1, seq: [], empty: true });
+        return;
+      }
       var seq = [];
       a.squares.forEach(function (sq) {
         var L = letterOf(sq), last = seq[seq.length - 1];
@@ -834,6 +864,69 @@
     }).filter(function (q) { return q.rows.length; });
     if (insEmpty.length) out.push({ repeat: 1, rows: [{ chords: insEmpty, repeat: 1 }] });
     return { squares: out, applied: applied, unmapped: unmapped };
+  }
+
+  // Правка квадратов в режиме «Аккорды» → аккорды в тексте.
+  // Сравниваются ЯЧЕЙКИ раскладки (без развёртки повторов), поэтому смена ×N, деление и склейка строк
+  // текст не трогают. Правка ячейки применяется ко всем местам текста, где эта ячейка звучит.
+  // Если раскладка до правки не совпадает с текстом (точно или циклически) — текст не меняем:
+  // неизвестно, какие аккорды в словах соответствуют ячейкам (так раньше появлялись лишние аккорды).
+  function flatSlots(squares) {
+    var out = [];
+    (squares || []).forEach(function (sq, si) { sq.rows.forEach(function (r, ri) { r.chords.forEach(function (c, ci) { out.push({ si: si, ri: ri, ci: ci, chord: c }); }); }); });
+    return out;
+  }
+  function projectSlotEdits(oldSq, newSq, target) {
+    var tgt = clone(target || []);
+    var of = flatSlots(oldSq), nf = flatSlots(newSq);
+    var ofK = of.map(function (x) { return chordKey(x.chord); }), nfK = nf.map(function (x) { return chordKey(x.chord); });
+    var same = of.length === nf.length && of.every(function (x, i) { return x.chord === nf[i].chord; });
+    if (same) return { squares: tgt, applied: 0, mismatch: false };
+    // играется то же самое (развернули/свернули повтор, перестроили строки) или уже как в тексте — слова не трогаем
+    var neK = expandSquares(newSq || []).map(chordKey).join('\u0001');
+    if (neK === expandSquares(oldSq || []).map(chordKey).join('\u0001') ||
+        neK === expandSlots(tgt).map(function (x) { return chordKey(x.chord); }).join('\u0001')) return { squares: tgt, applied: 0, mismatch: false };
+    var slotIdx = {};
+    of.forEach(function (x, i) { slotIdx[x.si + ':' + x.ri + ':' + x.ci] = i; });
+    var oExp = expandSlots(oldSq || []).map(function (x) { return slotIdx[x.si + ':' + x.ri + ':' + x.ci]; });
+    var oK = oExp.map(function (i) { return ofK[i]; });
+    var tExp = expandSlots(tgt), tK = tExp.map(function (x) { return chordKey(x.chord); });
+    var textSlot = [];
+    if (oK.length && tK.length && tK.length % oK.length === 0 && tK.every(function (k, p) { return k === oK[p % oK.length]; })) {
+      textSlot = tK.map(function (k, p) { return oExp[p % oExp.length]; });
+    } else if (oK.length || tK.length) {
+      return { squares: tgt, applied: 0, mismatch: true };
+    }
+    var edits = alignOps(ofK, nfK, 1);
+    if (!edits) return { squares: tgt, applied: 0, mismatch: true };
+    var posEdit = {}, insAfter = {}, insBefore = {}, insEmpty = [], applied = 0;
+    edits.forEach(function (o) {
+      if (o.t === 'eq') { if (of[o.i].chord !== nf[o.j].chord) { posEdit[o.i] = { sub: nf[o.j].chord }; applied++; } return; }
+      if (o.t === 'sub') { posEdit[o.i] = { sub: nf[o.j].chord }; applied++; return; }
+      if (o.t === 'del') { posEdit[o.i] = { del: true }; applied++; return; }
+      var v = nf[o.j].chord;
+      if (!of.length) insEmpty.push(v);
+      else if (o.i < of.length && (nf[o.j].ci === 0 || o.i === 0)) (insBefore[o.i] = insBefore[o.i] || []).push(v);
+      else (insAfter[o.i - 1] = insAfter[o.i - 1] || []).push(v);
+      applied++;
+    });
+    if (!applied) return { squares: tgt, applied: 0, mismatch: false };
+    var firstPos = {};
+    tExp.forEach(function (x, p) { var key = x.si + ':' + x.ri + ':' + x.ci; if (!(key in firstPos)) firstPos[key] = p; });
+    var out = tgt.map(function (q, si) {
+      return { repeat: q.repeat, rows: q.rows.map(function (r, ri) {
+        var chords = [];
+        r.chords.forEach(function (c, ci) {
+          var s = textSlot[firstPos[si + ':' + ri + ':' + ci]], e = posEdit[s];
+          (insBefore[s] || []).forEach(function (v) { chords.push(v); });
+          if (!e) chords.push(c); else if (!e.del) chords.push(e.sub);
+          (insAfter[s] || []).forEach(function (v) { chords.push(v); });
+        });
+        return { chords: chords, repeat: r.repeat, ref: r.ref };
+      }).filter(function (r) { return r.chords.length; }) };
+    }).filter(function (q) { return q.rows.length; });
+    if (insEmpty.length) out.push({ repeat: 1, rows: [{ chords: insEmpty, repeat: 1 }] });
+    return { squares: out, applied: applied, mismatch: false };
   }
 
   // Аккорды всегда из текста песни: ручные квадраты задают только раскладку (повторы, строки).
@@ -1179,7 +1272,7 @@
     parseSquaresText: parseSquaresText, squaresToText: squaresToText,
     parseChordsOnlyText: parseChordsOnlyText, buildLayoutFromText: buildLayoutFromText, layoutToText: layoutToText,
     analyzeSong: analyzeSong, songForm: songForm,
-    alignOps: alignOps, projectEdits: projectEdits, reskinSquares: reskinSquares, chordTokens: chordTokens, applyChordsToRaw: applyChordsToRaw,
+    alignOps: alignOps, projectEdits: projectEdits, projectSlotEdits: projectSlotEdits, reskinSquares: reskinSquares, chordTokens: chordTokens, applyChordsToRaw: applyChordsToRaw,
     chordLines: chordLines, snapToWord: snapToWord,
     ops: {
       setChord: setChord, insertChord: insertChord, removeChord: removeChord, moveChord: moveChord,
