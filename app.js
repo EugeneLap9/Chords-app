@@ -59,11 +59,12 @@ function openMenu(anchor, items) {
   m.className = 'overflow-menu';
   items.filter(Boolean).forEach(it => {
     const d = document.createElement('div');
-    d.className = 'overflow-menu-item' + (it.danger ? ' danger' : '');
+    d.className = 'overflow-menu-item' + (it.danger ? ' danger' : '') + (it.disabled ? ' menu-info' : '');
     d.textContent = it.label;
     if (it.id) d.id = it.id;
     d.addEventListener('click', e => {
       e.stopPropagation();
+      if (it.disabled) return;
       if (it.keepOpen) { it.onClick(d); return; }
       closeMenu(); it.onClick(d);
     });
@@ -610,29 +611,13 @@ const transposeKey = transposeChord;
 // ═══════════════════════════════════════════
 //  KEY DETECTION
 // ═══════════════════════════════════════════
+function lyricsChords(lyrics) {
+  return [...CE.normalizeLyrics(String(lyrics || '')).matchAll(/\[([^\]]+)\]/g)].map(m => m[1].trim()).filter(c => CE.isChord(c));
+}
+// Тональность по аккордам: диатоника, тоника в начале/конце, каденции V→I (CE.detectKey)
 function detectKeyFromLyrics(lyrics) {
-  if (!lyrics) return null;
-  const ch = [...CE.normalizeLyrics(lyrics).matchAll(/\[([^\]]+)\]/g)].map(m => m[1].trim()).filter(c => CE.isChord(c));
-  if (!ch.length) return null;
-  const nc = new Array(12).fill(0);
-  for (const c of ch) {
-    const r = /^([A-H][b#]?)/.exec(c); if (!r) continue;
-    const i = NOTES.indexOf(normalizeNote(r[1])); if (i < 0) continue;
-    const isM = /^[A-H][b#]?m(?!aj)/.test(c);
-    nc[i] += 3; nc[(i + (isM ? 3 : 4)) % 12] += 1; nc[(i + 7) % 12] += 2;
-  }
-  // Первый и последний аккорд — сильный признак тоники
-  [ch[0], ch[ch.length - 1]].forEach(c => { const r = /^([A-H][b#]?)/.exec(c); const i = r ? NOTES.indexOf(normalizeNote(r[1])) : -1; if (i >= 0) nc[i] += 2; });
-  const maj = [6.35, 2.23, 3.48, 2.33, 4.38, 4.09, 2.52, 5.19, 2.39, 3.66, 2.29, 2.88];
-  const min = [6.33, 2.68, 3.52, 5.38, 2.60, 3.53, 2.54, 4.75, 3.98, 2.69, 3.34, 3.17];
-  let bk = null, bs = -Infinity, bm = false;
-  for (let r = 0; r < 12; r++) {
-    let ms = 0, ns = 0;
-    for (let i = 0; i < 12; i++) { ms += nc[(r + i) % 12] * maj[i]; ns += nc[(r + i) % 12] * min[i]; }
-    if (ms > bs) { bs = ms; bk = r; bm = false; }
-    if (ns > bs) { bs = ns; bk = r; bm = true; }
-  }
-  return bk === null ? null : NOTES[bk] + (bm ? 'm' : '');
+  const d = CE.detectKey(lyricsChords(lyrics));
+  return d ? d.key : null;
 }
 const _detectedKeyCache = new Map();
 // FIX: единый источник тональности. Раньше список песен показывал song.key,
@@ -644,16 +629,28 @@ function getSongKey(song) {
   const userKey = CE.isChord(song.key) ? song.key : null;
   let k = detected || userKey || 'C';
   // Тональность, указанная пользователем, важнее алгоритма — если она правдоподобна:
-  // её тоническое трезвучие встречается в песне (так отсекаем «C» по умолчанию у старых импортов)
+  // аккорды песни ложатся в неё почти так же хорошо, как в найденную (так отсекаем «C» по умолчанию у старых импортов)
   if (userKey) {
-    const tonic = CE.chordKey(userKey.replace(/^([A-H][#b]?m?).*$/, '$1'));
-    const used = lineChords(song.lyrics || '').map(c => CE.chordKey(c.replace(/^([A-H][#b]?(?:m(?!aj))?).*$/, '$1')));
-    if (used.includes(tonic) || (detected && sameScale(detected, userKey))) k = userKey;
+    const ch = lyricsChords(song.lyrics);
+    const uk = userKey.replace(/^([A-H][#b]?(?:m(?!aj))?).*$/, '$1');
+    if (!ch.length || (detected && sameScale(detected, uk))) k = userKey;
+    else {
+      const best = CE.keyScore(ch, detected), mine = CE.keyScore(ch, uk);
+      if (mine >= best - Math.max(1, Math.abs(best) * 0.1)) k = userKey;
+    }
   }
   _detectedKeyCache.set(song.id, k);
   return k;
 }
 const getDetectedKey = getSongKey;
+// Откуда взялась тональность — для подсказки музыканту
+function keySource(song) {
+  const ch = lyricsChords(song.lyrics);
+  if (!ch.length) return 'указана вручную';
+  const d = CE.detectKey(ch), k = getSongKey(song);
+  if (d && CE.chordKey(d.key) === CE.chordKey(k)) return 'по аккордам';
+  return 'указана вручную';
+}
 function sameScale(a, b) {
   const pa = /^([A-H][b#]?)(m(?!aj))?/.exec(a), pb = /^([A-H][b#]?)(m(?!aj))?/.exec(b);
   if (!pa || !pb) return false;
@@ -864,7 +861,8 @@ function renderBlockLabel(label, repeat) {
 }
 // Строка «аккорды над словами»: каждое слово — блок, аккорд стоит над своим словом/слогом.
 // Перенос строки — только между словами, поэтому аккорд никогда не отрывается от слова.
-function renderChordWords(item, tr) {
+function renderChordWords(item, tr, fmt) {
+  fmt = fmt || escapeHtml;
   const text = item.text;
   const at = new Map();
   item.chords.forEach(c => { if (!at.has(c.at)) at.set(c.at, []); at.get(c.at).push(tr(c.chord)); });
@@ -888,19 +886,20 @@ function renderChordWords(item, tr) {
   let html = '', cur = -1;
   segs.forEach(sg => {
     if (sg.w !== cur) { if (cur >= 0) html += '</span>'; html += '<span class="cl-w">'; cur = sg.w; }
-    html += `<span class="cl-s"><b class="cl-c${sg.free ? ' cl-free' : ''}">${sg.chord ? escapeHtml(sg.chord) : ''}</b><span class="cl-t">${escapeHtml(sg.t)}</span></span>`;
+    html += `<span class="cl-s"><b class="cl-c${sg.free ? ' cl-free' : ''}">${sg.chord ? fmt(sg.chord) : ''}</b><span class="cl-t">${escapeHtml(sg.t)}</span></span>`;
   });
   return html + (cur >= 0 ? '</span>' : '');
 }
-function renderMixedBlock(song, b, i, tr) {
+function renderMixedBlock(song, b, i, tr, opt) {
   tr = tr || (c => c);
+  const fmt = (opt && opt.fmt) || escapeHtml, keyNote = (opt && opt.keyNote) || '';
   if (!b.lines.some(l => l.trim()) && !b.label) return '';
   const color = getBlockColor(b.label, i);
   const collapsed = isCollapsed(song.id, 'm' + i, false);
   const colBtn = `<button class="block-collapse-btn" data-ck="m${i}" aria-label="Свернуть блок">▼</button>`;
-  const head = `<div class="block-header-row">${renderBlockLabel(b.label, b.repeat) || '<span></span>'}${colBtn}</div>`;
+  const head = `<div class="block-header-row">${renderBlockLabel(b.label, b.repeat) || '<span></span>'}${keyNote}${colBtn}</div>`;
   const items = CE.chordLines(b.lines);
-  const badges = cs => cs.map(c => `<span class="chord-badge">${escapeHtml(tr(c.chord))}</span>`).join('');
+  const badges = cs => cs.map(c => `<span class="chord-badge">${fmt(tr(c.chord))}</span>`).join('');
   let body;
   if (items.length && items.every(it => !it.text && it.chords.length === 1 && it.repeat === 1)) {
     body = `<div class="chord-row">${badges(items.map(it => it.chords[0]))}</div>`;
@@ -916,7 +915,7 @@ function renderMixedBlock(song, b, i, tr) {
       const rep = n > 1 ? `<span class="repeat-badge">×${n}</span>` : '';
       if (!it.text) return `<div class="ie-line-wrap"><div class="chord-row">${badges(it.chords)}${rep}</div></div>`;
       if (!it.chords.length) return `<div class="ie-line-wrap"><div class="lyric-line">${escapeHtml(it.text)}${rep}</div></div>`;
-      return `<div class="ie-line-wrap"><div class="cl-line">${renderChordWords(it, tr)}${rep}</div></div>`;
+      return `<div class="ie-line-wrap"><div class="cl-line">${renderChordWords(it, tr, fmt)}${rep}</div></div>`;
     }).join('');
   }
   return `<div class="song-card-block${collapsed ? ' block-collapsed' : ''}" style="--block-color:${color}">${head}<div class="block-chords">${body}</div></div>`;
@@ -999,7 +998,8 @@ function songMapHtml(items, analysis, editable, custom, withChart) {
 }
 // Режим «Аккорды» идёт по ПОРЯДКУ ПЕСНИ (song.arrangement, по умолчанию — как в тексте).
 // Часть, которая уже звучала выше с теми же аккордами, свёрнута и помечена «как …».
-function renderChordsOnly(song, blocks, transpose, notation) {
+function renderChordsOnly(song, blocks, transpose, notation, kv) {
+  kv = kv || {};
   const analysis = CE.analyzeSong(blocks, song.chordsOnlyLayout, transpose, notation);
   const items = CE.resolveArrangement(song.arrangement, blocks, analysis);
   const custom = !!(song.arrangement && song.arrangement.length) && !CE.isDefaultArrangement(song.arrangement, blocks, analysis);
@@ -1009,7 +1009,7 @@ function renderChordsOnly(song, blocks, transpose, notation) {
   const showLetters = chart.patterns.length >= 2 && chart.patterns.some(p => p.uses > 1);
   const letters = showLetters ? chart.letters : null;
   const colors = chart.colors;
-  const chartHtml = chart.patterns.length >= 2 ? renderChart(chart) : '';
+  const chartHtml = chart.patterns.length >= 2 ? renderChart(chart, kv.songMap) : '';
   const body = items.map((it, i) => {
     const a = analysis[it.bi];
     if (!a) return '';
@@ -1027,20 +1027,20 @@ function renderChordsOnly(song, blocks, transpose, notation) {
     const note = isRepeat ? `<span class="cs-repeat-note">как ${escapeHtml(firstLabel)}</span>` : '';
     const times = it.repeat > 1 ? `<span class="cs-times-badge">×${it.repeat}</span>` : '';
     const manual = a.manual ? '<span class="cs-manual-dot" title="Ручная раскладка">свои квадраты</span>' : '';
-    const label = `<span class="chords-only-label">${escapeHtml(a.label || (a.bi === 0 ? 'Начало' : 'Без метки'))}</span>`;
+    const label = `<span class="chords-only-label">${escapeHtml(a.label || (a.bi === 0 ? 'Начало' : 'Без метки'))}</span>${kv.keyNote ? kv.keyNote(it.bi) : ''}`;
     return `<div class="chords-only-block${isRepeat ? ' is-repeat' : ''}${collapsed ? ' block-collapsed' : ''}" id="co-item-${i}" data-orig-bi="${it.bi}" style="--block-color:${color}">
       <div class="chords-only-header">${label}${times}${note}${manual}<button class="block-collapse-btn" data-ck="a${i}" aria-label="Свернуть часть">▼</button></div>
-      <div class="chords-only-rows-wrap">${CE.squaresToHtml(a.squares, { letters, colors })}</div></div>`;
+      <div class="chords-only-rows-wrap">${CE.squaresToHtml(a.squares, { letters, colors, map: kv.map ? kv.map(it.bi) : null })}</div></div>`;
   }).join('');
   // Нет краткой схемы (меньше двух разных квадратов) — подробный вид показываем всегда,
   // даже если раньше был выбран «Кратко»: иначе экран оставался пустым
   return songMapHtml(items, analysis, true, custom, !!chartHtml) + chartHtml + `<div class="cs-detail${chartHtml ? '' : ' cs-detail-only'}">${body}</div>`;
 }
 // Краткий вид: все разные квадраты (A, B, C…) и форма песни буквами — всё на одном экране
-function renderChart(chart) {
+function renderChart(chart, map) {
   if (!chart.patterns.length) return '';
   const pats = chart.patterns.map(p => `<div class="cs-pattern"><span class="cs-letter cs-letter-big" data-c="${p.color}" title="Квадрат ${p.letter}">${p.letter}</span>
-      <div class="cs-pattern-body">${CE.squaresToHtml([p.square])}</div></div>`).join('');
+      <div class="cs-pattern-body">${CE.squaresToHtml([p.square], { map })}</div></div>`).join('');
   const rows = chart.sections.map(sec => `<button class="cs-form-row" data-goto-item="${sec.item}" style="--block-color:${getBlockColor(sec.label, sec.bi)}">
       <span class="cs-form-label">${escapeHtml(sec.label || 'Без метки')}${sec.repeat > 1 ? ` <b>×${sec.repeat}</b>` : ''}</span>
       <span class="cs-form-seq">${sec.empty ? '<span class="cs-repeat-note">—</span>' : ''}${sec.seq.map(x => `<span class="cs-seq-chip" data-c="${x.color}">${x.letter}${x.repeat > 1 ? `<b>×${x.repeat}</b>` : ''}</span>`).join('')}</span></button>`).join('');
@@ -1054,16 +1054,32 @@ const _renderCache = new Map();
 const RENDER_CACHE_MAX = 30;
 function renderSongContent(song, transpose) {
   const notation = getSongNotation(song.id);
-  const cacheKey = song.id + ':' + transpose + ':' + (notation || 'x') + ':' + (twoColAllowed() ? 2 : 1);
+  const deg = !!appSettings.degrees;
+  const cacheKey = song.id + ':' + transpose + ':' + (notation || 'x') + ':' + (twoColAllowed() ? 2 : 1) + ':' + (deg ? 'd' + (appSettings.minorFrom || 't') : 'l');
   if (_renderCache.has(cacheKey)) return _renderCache.get(cacheKey);
   const blocks = parseSong(song.lyrics, transpose, notation);
   // места аккордов считаем по исходному тексту (ширина [F#m] и [Gm] разная), а названия транспонируем
   const blocks0 = transpose || notation ? parseSong(song.lyrics, 0) : blocks;
   const tr = transpose || notation ? (c => transposeChord(c, transpose, notation)) : (c => c);
-  const html = splitBlocksToColumns(blocks0, (b, i) => renderMixedBlock(song, b, i, tr)) + renderChordsOnly(song, blocks, transpose, notation);
+  const kv = songKeyView(song, blocks0, transpose, notation, deg);
+  const html = splitBlocksToColumns(blocks0, (b, i) => renderMixedBlock(song, b, i, kv.map ? (c => kv.map(i)(tr(c))) : tr, { fmt: deg ? CE.chordHtml : null, keyNote: kv.keyNote(i) }))
+    + renderChordsOnly(song, blocks, transpose, notation, kv);
   if (_renderCache.size >= RENDER_CACHE_MAX) _renderCache.delete(_renderCache.keys().next().value);
   _renderCache.set(cacheKey, html);
   return html;
+}
+// Тональность по блокам (модуляции) и перевод аккордов в ступени для показа
+function songKeyView(song, blocks0, transpose, notation, deg) {
+  const base = getSongKey(song);
+  const keys0 = CE.blockKeysOf(blocks0.map(b => b.lines.flatMap(lineChords)), base);
+  const shown = k => transposeKey(k, transpose, notation);
+  const songMap = deg ? (c => CE.chordToDegree(c, shown(base), appSettings.minorFrom)) : null;
+  return {
+    songMap,
+    map: deg ? (bi => c => CE.chordToDegree(c, shown(keys0[bi] || base), appSettings.minorFrom)) : null,
+    keyNote: bi => keys0[bi] && keys0[bi] !== base && (bi === 0 || keys0[bi] !== keys0[bi - 1])
+      ? `<span class="key-change" title="Смена тональности">тон. ${escapeHtml(shown(keys0[bi]))}</span>` : '',
+  };
 }
 function invalidateSongCache(songId) {
   for (const key of [..._renderCache.keys()]) if (key.startsWith(songId + ':')) _renderCache.delete(key);
@@ -1314,7 +1330,7 @@ function renderSongView(song, animDir) {
     <div class="song-view-controls">
       <div class="transpose-block">
         <button class="transpose-btn" id="tr-down" aria-label="Понизить на полтона" ${lock}>−</button>
-        <div class="transpose-val" id="tr-val" title="Тап — вернуть оригинал">${escapeHtml(currentKey)}<small>${transposeOffset ? (transposeOffset > 0 ? '+' : '') + transposeOffset : 'ориг.'}</small></div>
+        <div class="transpose-val${appSettings.degrees ? ' is-degrees' : ''}" id="tr-val" title="Тональность: ступени, оригинал">${appSettings.degrees ? '<span class="deg-one">1=</span>' : ''}${escapeHtml(currentKey)}<small>${transposeOffset ? (transposeOffset > 0 ? '+' : '') + transposeOffset : 'ориг.'}</small></div>
         <button class="transpose-btn" id="tr-up" aria-label="Повысить на полтона" ${lock}>+</button>
       </div>
       <div class="mode-seg" id="song-view-mode-btn" role="group" aria-label="Режим просмотра">
@@ -1349,7 +1365,17 @@ function renderSongView(song, animDir) {
   $('tr-up').addEventListener('click', () => transposeBy(1));
   $('tr-down').addEventListener('click', () => transposeBy(-1));
   // FIX: dblclick не работает на телефонах — сброс транспозиции одиночным тапом по тональности
-  $('tr-val').addEventListener('click', () => { if (!transposeOffset || _inlineEditActive) return; transposeOffset = 0; saveTranspose(song.id, 0); renderSongView(song); showToast('Оригинальная тональность'); });
+  // тап по тональности: вернуть оригинал / ступени / как определена тональность
+  $('tr-val').addEventListener('click', e => {
+    if (_inlineEditActive) return;
+    e.stopPropagation();
+    const origKey = transposeKey(getSongKey(song), 0, getSongNotation(song.id));
+    openMenu(e.currentTarget, [
+      { label: 'Тональность песни: ' + origKey + (keySource(song) ? ' · ' + keySource(song) : ''), disabled: true },
+      transposeOffset && { label: 'Вернуть оригинальную (' + origKey + ')', onClick: () => { transposeOffset = 0; saveTranspose(song.id, 0); renderSongView(song); showToast('Оригинальная тональность'); } },
+      { label: appSettings.degrees ? 'Аккорды буквами (G C D)' : 'Ступени вместо аккордов (1 4 5)', onClick: () => setDegreesMode(!appSettings.degrees) },
+    ].filter(Boolean));
+  });
   $('song-inline-edit-btn').addEventListener('click', () => toggleInlineEdit(song));
   $('song-overflow-btn').addEventListener('click', e => { e.stopPropagation(); showSongOverflowMenu(song, e.currentTarget); });
   if (setlistContext) {
@@ -2024,6 +2050,10 @@ function showSongOverflowMenu(song, btn) {
       openMenu(btn, targets.map(t => ({ label: t.name, onClick: () => copySongToTeam(song, t) })));
     } },
     { label: 'Подобрать под солиста', onClick: () => openSingerPicker(song) },
+    { label: appSettings.degrees ? 'Показывать аккорды буквами' : 'Показывать ступени (1 4 5)', onClick: () => {
+      if (_inlineEditActive) { showToast('Сначала сохраните редактирование'); return; }
+      setDegreesMode(!appSettings.degrees);
+    } },
     { label: nt === 'flat' ? 'Показывать диезы ♯' : 'Показывать бемоли ♭', onClick: () => {
       if (_inlineEditActive) { showToast('Сначала сохраните редактирование'); return; }
       notationMap[song.id] = nt === 'flat' ? 'sharp' : 'flat'; saveNotationMap();
@@ -2466,6 +2496,8 @@ function updateSettingsUI() {
   markActive('.settings-view-btn', 'mode', globalViewMode);
   markActive('.settings-notation-btn', 'notation', appSettings.notation || 'asis');
   markActive('.settings-density-btn', 'density', densityMode);
+  markActive('.settings-degrees-btn', 'degrees', appSettings.degrees ? 'numbers' : 'letters');
+  markActive('.settings-minor-btn', 'minor', appSettings.minorFrom === 'relative' ? 'relative' : 'tonic');
 }
 $('settings-nav-btn').addEventListener('click', () => { updateSettingsUI(); openOverlay('overlay-settings'); checkAdmin().catch(() => {}); });
 $('settings-font-down').addEventListener('click', () => { changeFontSize(-1); updateSettingsUI(); });
@@ -2478,6 +2510,19 @@ document.querySelectorAll('.settings-notation-btn').forEach(b => b.addEventListe
   updateSettingsUI();
   if (currentPage === 'songs') renderSongs($('search-input').value);
   showToast('Аккорды: ' + SETTING_NAMES.notation[appSettings.notation]);
+}));
+// Ступени (нэшвиллская система): вкл/выкл для всех песен
+function setDegreesMode(on) {
+  appSettings.degrees = !!on; saveSettings();
+  _renderCache.clear();
+  if (typeof updateSettingsUI === 'function' && $('overlay-settings').classList.contains('open')) updateSettingsUI();
+  if (currentPage === 'song-view' && currentSongId && !_inlineEditActive) { const so = songsCache.find(x => x.id === currentSongId); if (so) renderSongView(so); }
+  showToast(on ? 'Ступени: 1 = тоника песни' : 'Аккорды буквами');
+}
+document.querySelectorAll('.settings-degrees-btn').forEach(b => b.addEventListener('click', () => { setDegreesMode(b.dataset.degrees === 'numbers'); updateSettingsUI(); }));
+document.querySelectorAll('.settings-minor-btn').forEach(b => b.addEventListener('click', () => {
+  appSettings.minorFrom = b.dataset.minor; saveSettings(); _renderCache.clear(); updateSettingsUI();
+  showToast(b.dataset.minor === 'relative' ? 'Минор от параллельного мажора: Am = 6m' : 'Минор от тоники: Am = 1m');
 }));
 document.querySelectorAll('.settings-density-btn').forEach(b => b.addEventListener('click', () => { densityMode = b.dataset.density; LS.set(DENSITY_KEY, densityMode); applyDensityMode(); updateSettingsUI(); showToast('Плотность: ' + SETTING_NAMES.density[densityMode]); }));
 $('settings-tuner-btn').addEventListener('click', () => { closeOverlay('overlay-settings'); openTuner(); });

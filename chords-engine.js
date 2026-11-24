@@ -1228,13 +1228,134 @@
     return out;
   }
 
+  // ─────────────────────── ТОНАЛЬНОСТЬ И СТУПЕНИ ───────────────────────
+  function noteIdx(n) { return NOTES_SHARP.indexOf(normalizeNote(n)); }
+  // Аккорд → { root: 0..11, q: 'maj'|'m'|'dim'|'any', bass: 0..11|null }
+  function chordInfo(c) {
+    c = String(c || '').trim();
+    var bass = null, slash = c.lastIndexOf('/');
+    if (slash > 0 && /^[A-H](#|b)?$/.test(c.slice(slash + 1))) { bass = noteIdx(c.slice(slash + 1)); c = c.slice(0, slash); }
+    var p = splitRoot(c); if (!p) return null;
+    var r = noteIdx(p.root); if (r < 0) return null;
+    var rest = p.rest, q;
+    if (/^(dim|°|o(?!\w)|m7b5|m7-5|ø)/.test(rest)) q = 'dim';
+    else if (/^(m|min)(?!aj)/.test(rest)) q = 'm';
+    else if (/^(sus|5$|5\b|no3)/.test(rest)) q = 'any';
+    else q = 'maj';
+    return { root: r, q: q, rest: rest, bass: bass };
+  }
+  // Ожидаемое качество аккорда на ступени (полутона от тоники)
+  var MAJ_DIA = { 0: 'maj', 2: 'm', 4: 'm', 5: 'maj', 7: 'maj', 9: 'm', 11: 'dim' };
+  var MIN_DIA = { 0: 'm', 2: 'dim', 3: 'maj', 5: 'm', 7: 'm', 8: 'maj', 10: 'maj' };
+  // Частые «чужие» аккорды: в мажоре ♭VII, iv, ♭VI, II (V/V), III (V/vi); в миноре V (гармонический), IV (дорийский)
+  var MAJ_BORROW = { '10maj': 0.4, '5m': 0.3, '8maj': 0.3, '3maj': 0.2, '2maj': 0.25, '4maj': 0.3, '9maj': 0.2, '0m': 0.1 };
+  var MIN_BORROW = { '7maj': 1, '5maj': 0.3, '11dim': 0.5, '0maj': 0.2, '1maj': 0.1 };
+  function scoreKey(infos, t, minor) {
+    var dia = minor ? MIN_DIA : MAJ_DIA, bor = minor ? MIN_BORROW : MAJ_BORROW;
+    var tonicQ = minor ? 'm' : 'maj', s = 0;
+    infos.forEach(function (x, i) {
+      var iv = (x.root - t + 12) % 12, exp = dia[iv];
+      if (exp && (x.q === exp || x.q === 'any' || (exp === 'dim' && x.q === 'm'))) {
+        s += 1;
+        if (iv === 0) s += 0.6; else if (iv === 7 || iv === 5) s += 0.15;
+      } else if (bor[iv + x.q] != null) s += bor[iv + x.q] - 0.3;
+      else if (x.q === 'any' && (bor[iv + 'maj'] != null || bor[iv + 'm'] != null)) s += 0;
+      else s -= 1;
+      // органный пункт на тонике в басу (F/C в C) — признак тоники
+      if (x.bass != null && iv !== 0 && (x.bass - t + 12) % 12 === 0) s += 0.3;
+      // каденции: V→I, IV→I, ♭VII→I (тоника в основном виде, не квартсекстаккорд)
+      var prev = infos[i - 1];
+      if (prev && iv === 0 && (x.q === tonicQ || x.q === 'any') && (x.bass == null || x.bass === x.root)) {
+        var pv = (prev.root - t + 12) % 12;
+        if (pv === 7) s += 0.6; else if (pv === 5 || pv === 10) s += 0.25;
+      }
+    });
+    function isTonic(x) { return x && (x.root - t + 12) % 12 === 0 && (x.q === tonicQ || x.q === 'any'); }
+    if (isTonic(infos[0])) s += 1.8;
+    if (isTonic(infos[infos.length - 1])) s += 1.2;
+    if (!minor) s += 0.3; // в песнях чаще мажор
+    return s;
+  }
+  // Тональность по аккордам: { key: 'G'|'Em', ranked: [{key, score}], confidence: 0..1 }
+  function detectKey(chords, notation) {
+    var infos = (chords || []).map(chordInfo).filter(Boolean);
+    if (!infos.length) return null;
+    var useFlat = notation === 'flat' || (notation !== 'sharp' && (chords || []).filter(function (c) { return /^[A-H]b/.test(c); }).length > (chords || []).filter(function (c) { return /^[A-H]#/.test(c); }).length);
+    var ranked = [];
+    for (var t = 0; t < 12; t++) for (var mi = 0; mi < 2; mi++) {
+      ranked.push({ t: t, minor: !!mi, score: scoreKey(infos, t, !!mi) });
+    }
+    ranked.sort(function (a, b) { return b.score - a.score; });
+    var names = useFlat ? NOTES_FLAT : NOTES_SHARP;
+    ranked.forEach(function (r) { r.key = names[r.t] + (r.minor ? 'm' : ''); });
+    var best = ranked[0], other = null;
+    for (var k = 1; k < ranked.length; k++) {
+      var rel = best.minor ? (ranked[k].t === (best.t + 3) % 12 && !ranked[k].minor) : (ranked[k].t === (best.t + 9) % 12 && ranked[k].minor);
+      if (!rel) { other = ranked[k]; break; }
+    }
+    var conf = other ? Math.max(0, Math.min(1, (best.score - other.score) / Math.max(1, infos.length))) : 1;
+    return { key: best.key, ranked: ranked.map(function (r) { return { key: r.key, score: r.score }; }), confidence: conf };
+  }
+  // Оценка конкретной тональности (для проверки тональности, указанной пользователем)
+  function keyScore(chords, key) {
+    var ki = chordInfo(key); if (!ki) return -Infinity;
+    var infos = (chords || []).map(chordInfo).filter(Boolean);
+    return scoreKey(infos, ki.root, ki.q === 'm');
+  }
+  // Нэшвиллская система: аккорд → ступень относительно тональности.
+  // minorFrom: 'tonic' — минор от 1 (Am в Am = 1m), 'relative' — от параллельного мажора (Am в Am = 6m)
+  var DEG_MAJ = ['1', '♭2', '2', '♭3', '3', '4', '♯4', '5', '♭6', '6', '♭7', '7'];
+  var DEG_MIN = ['1', '♭2', '2', '3', '♯3', '4', '♯4', '5', '6', '♯6', '7', '♯7'];
+  function degreeOf(semi, table) { return table[(semi % 12 + 12) % 12]; }
+  function chordToDegree(chord, key, minorFrom) {
+    var ki = chordInfo(key), x = chordInfo(chord);
+    if (!ki || !x) return String(chord);
+    var t = ki.root, table = DEG_MAJ;
+    if (ki.q === 'm') { if (minorFrom === 'relative') t = (t + 3) % 12; else table = DEG_MIN; }
+    var rest = x.rest.replace(/^min(?!aj)/, 'm');
+    return degreeOf(x.root - t, table) + rest + (x.bass != null ? '/' + degreeOf(x.bass - t, table) : '');
+  }
+  // Модуляции: тональность каждого блока (смена тональности — когда аккорды блока
+  // явно лучше ложатся в другую тональность). chordsByBlock: [[аккорды блока]], songKey: 'G'
+  function blockKeysOf(chordsByBlock, songKey) {
+    var cur = songKey, out = [];
+    function fit(ch, k) { return keyScore(ch, k) / ch.length; }
+    function sameScale(a, b) {
+      var x = chordInfo(a), y = chordInfo(b); if (!x || !y) return false;
+      return (x.root + (x.q === 'm' ? 3 : 0)) % 12 === (y.root + (y.q === 'm' ? 3 : 0)) % 12;
+    }
+    (chordsByBlock || []).forEach(function (ch) {
+      ch = (ch || []).filter(function (c) { return chordInfo(c); });
+      if (ch.length >= 3) {
+        var fc = fit(ch, cur);
+        if (fc < 0.75) {
+          var d = detectKey(ch), best = d.key;
+          // модуляция сохраняет лад песни: F#m после G → A (параллельный мажор)
+          var bi = chordInfo(best), si = chordInfo(songKey);
+          if (bi && si && (bi.q === 'm') !== (si.q === 'm')) {
+            var names = /b/.test(best) ? NOTES_FLAT : NOTES_SHARP;
+            best = bi.q === 'm' ? names[(bi.root + 3) % 12] : names[(bi.root + 9) % 12] + 'm';
+          }
+          if (!sameScale(best, cur)) {
+            if (cur !== songKey && fit(ch, songKey) >= fit(ch, best) - 0.2) cur = songKey;
+            else if (fit(ch, best) >= fc + 0.5) cur = best;
+          }
+        }
+      }
+      out.push(cur);
+    });
+    return out;
+  }
+  function isDegree(c) { return /^[♭♯#b]?[1-7](?![0-9])/.test(String(c || '')); }
+
   // ─────────────────────── RENDER ───────────────────────
   function esc(s) {
     return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
   }
   // Аккорд: корень (+m) крупно, расширения (7, sus4, maj7…) — индексом, бас — как есть
   function chordHtml(c) {
-    var m = /^([A-H](?:#|b)?(?:m(?!aj))?)(.*?)(\/[A-H](?:#|b)?)?$/.exec(c);
+    var m = /^([A-H](?:#|b)?(?:m(?!aj))?)(.*?)(\/[A-H](?:#|b)?)?$/.exec(c) ||
+      /^([♭♯]?[1-7](?:m(?!aj))?)(.*?)(\/[♭♯]?[1-7])?$/.exec(c);
     if (!m || !m[2]) return esc(c);
     return esc(m[1]) + '<sub>' + esc(m[2]) + '</sub>' + (m[3] ? esc(m[3]) : '');
   }
@@ -1245,8 +1366,9 @@
       var cols = 1;
       sq.rows.forEach(function (r) { cols = Math.max(cols, r.chords.length); });
       var multi = sq.rows.length > 1;
+      var map = (opts && opts.map) || function (c) { return c; };
       var rows = sq.rows.map(function (r) {
-        return '<div class="cs-row">' + r.chords.map(function (c) { return '<span class="chord-badge cs-bar">' + chordHtml(c) + '</span>'; }).join('') +
+        return '<div class="cs-row">' + r.chords.map(function (c) { return '<span class="chord-badge cs-bar">' + chordHtml(map(c)) + '</span>'; }).join('') +
           (r.repeat > 1 ? '<span class="cs-row-rep">×' + r.repeat + '</span>' : '') + '</div>';
       }).join('');
       var sig = squareSig(sq), letter = letters ? letters[sig] : '';
@@ -1263,6 +1385,7 @@
     bareChordLine: bareChordLine, bareLabelLine: bareLabelLine, normalizeLyrics: normalizeLyrics,
     squareSig: squareSig, songChart: songChart, romanName: romanName,
     transposeChord: transposeChord, chordKey: chordKey, chordEq: chordEq,
+    chordInfo: chordInfo, chordHtml: chordHtml, detectKey: detectKey, keyScore: keyScore, chordToDegree: chordToDegree, isDegree: isDegree, blockKeysOf: blockKeysOf,
     parseLine: parseLine, blockSequence: blockSequence, compressKeys: compressKeys, splitRows: splitRows,
     analyzeBlock: analyzeBlock, analyzeSequence: analyzeSequence, squaresFromRows: squaresFromRows,
     normalizeSquares: normalizeSquares, expandSquares: expandSquares, normalizeEntry: normalizeEntry,
