@@ -385,8 +385,9 @@ function refreshVisible() {
 async function pull() {
   if (!navigator.onLine) { _syncState = 'offline'; return false; }
   if (_outbox.length) await flush();
-  const full = !_cursor;
+  const full = !_cursor, team = currentTeam;
   const r = await api('GET', teamBase() + '/sync?since=' + (full ? 0 : Math.max(0, _cursor - 3000)));
+  if (team !== currentTeam) return false; // пока шёл запрос, переключились на другую команду — ответ не наш
   if (!r.ok) {
     _syncState = r.status === 401 ? 'noauth' : r.status === 403 ? 'noteam' : r.status === 0 ? 'offline' : 'error';
     return false;
@@ -3845,15 +3846,38 @@ applyFontSize();
 applyDensityMode();
 applyGlobalViewMode();
 initTelegram();
+// Быстрый запуск: сначала показываем библиотеку с устройства (IndexedDB), сеть — следом.
+// «Кто я» (/api/me) и синхронизация идут параллельно, а не друг за другом.
+async function loadLocal() {
+  try {
+    const [idbSongs, idbSetlists] = await Promise.all([IDB.getAllSongs(), IDB.getAllSetlists()]);
+    songsCache = idbSongs; setlistsCache = idbSetlists;
+    rebuildSnap('song'); rebuildSnap('setlist');
+    refreshVisible();
+    return idbSongs.length > 0;
+  } catch (e) { console.warn('IDB load error', e); return false; }
+}
+async function syncNow() {
+  if (!_cursor && songsCache.length) showSyncStatus('Загружаем библиотеку…');
+  const ok = await pull();
+  if (ok) hideSyncStatus(); else showSyncState(_syncState, SYNC_MSG[_syncState]);
+  return ok;
+}
 const _appReady = (async function init() {
   showPage('songs');
   await migrateFromLocalStorage();
   const prevTeam = currentTeam;
+  await loadLocal();
+  // уже синхронизировались раньше — догоняем изменения, не дожидаясь /api/me
+  const early = navigator.onLine && _cursor ? pull().catch(() => false) : Promise.resolve(false);
   const online = await loadTeams().catch(() => false);
-  if (online && currentTeam !== prevTeam) loadTeamState();
+  const earlyOk = await early;
+  if (online && currentTeam !== prevTeam) { loadTeamState(); await loadLocal(); }
   if (online) await handleStartParam();
   if (_noTeam) { refreshVisible(); return; }
-  await loadData();
+  if (currentTeam !== prevTeam || !earlyOk) await syncNow();
+  else hideSyncStatus();
+  startSync();
   await checkPendingSongFromBot();
   setTimeout(updateHeaderHeight, 100);
   setTimeout(updateHeaderHeight, 600);
