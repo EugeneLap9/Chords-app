@@ -809,7 +809,7 @@ const BLOCK_COLOR_MAP = [
   { keys: ['припев', 'chorus', 'refrain', 'реф', 'хор'], color: 'var(--chorus)' },
   { keys: ['бридж', 'bridge', 'мост'], color: 'var(--bridge)' },
   { keys: ['вступление', 'вступ', 'intro'], color: 'var(--intro)' },
-  { keys: ['проигрыш', 'instrumental', 'соло', 'solo', 'interlude'], color: 'var(--solo)' },
+  { keys: ['проигрыш', 'instrumental', 'соло', 'solo', 'interlude', 'turnaround', 'turn', 'вставка'], color: 'var(--solo)' },
   { keys: ['аутро', 'outro', 'концовка', 'ending', 'кода', 'coda', 'тег', 'tag'], color: 'var(--outro)' },
 ];
 const FALLBACK_COLORS = ['var(--verse)', 'var(--chorus)', 'var(--bridge)', 'var(--intro)', 'var(--solo)', 'var(--outro)'];

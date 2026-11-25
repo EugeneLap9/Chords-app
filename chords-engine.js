@@ -30,7 +30,7 @@
   var NOTES_FLAT = ['C', 'Db', 'D', 'Eb', 'E', 'F', 'Gb', 'G', 'Ab', 'A', 'Bb', 'B'];
   var FLAT2SHARP = { Db: 'C#', Eb: 'D#', Fb: 'E', Gb: 'F#', Ab: 'G#', Bb: 'A#', Cb: 'B', 'E#': 'F', 'B#': 'C', H: 'B', Hb: 'A#', 'H#': 'C' };
 
-  var KNOWN_BLOCK_WORDS = [
+  var KNOWN_BLOCK_WORDS = ['turnaround', 'turn', 'вставка', 
     'verse', 'chorus', 'bridge', 'intro', 'outro', 'interlude', 'solo', 'tag', 'hook', 'breakdown',
     'refrain', 'coda', 'ending', 'prechorus', 'pre-chorus', 'postchorus', 'post-chorus', 'instrumental',
     'куплет', 'припев', 'бридж', 'вступление', 'проигрыш', 'аутро', 'концовка', 'предприпев', 'пре-припев',
@@ -139,8 +139,20 @@
     return t.charAt(0).toUpperCase() + t.slice(1);
   }
   // Приводит текст песни к виду со скобками: аккордные строки и метки без скобок понимаются так же
+  // «[CHORUS] (x2)», «[Bridge 1] x4», «Припев ×2:», «Verse 2 - 2x» → метка + повтор блока
+  var LABEL_REP_RE = /^\s*(\[[^\]]+\]|[^\[\]]+?)\s*[:\-–—]?\s*(?:\(\s*)?(?:[x×хX]\s*(\d{1,2})|(\d{1,2})\s*[x×хX]|(\d{1,2})\s*раза?)(?:\s*\))?\s*:?\s*$/;
+  function labelWithRepeat(l) {
+    var m = LABEL_REP_RE.exec(String(l || ''));
+    if (!m) return null;
+    var n = parseInt(m[2] || m[3] || m[4], 10) || 1, lab;
+    if (m[1].charAt(0) === '[') { lab = m[1].slice(1, -1).trim(); if (!isBlockLabel(lab)) return null; }
+    else { lab = bareLabelLine(m[1]); if (!lab) return null; }
+    return { label: lab, repeat: Math.max(1, Math.min(99, n)) };
+  }
   function normalizeLyrics(text) {
     return String(text || '').replace(/\r/g, '').split('\n').map(function (l) {
+      var lr = labelWithRepeat(l); if (lr) return '[' + lr.label + ']' + (lr.repeat > 1 ? '\n#repeat:' + lr.repeat : '');
+      var bl = /^\s*\[([^\]]+)\]\s*:\s*$/.exec(l); if (bl && isBlockLabel(bl[1])) return '[' + bl[1].trim() + ']';
       var lab = bareLabelLine(l); if (lab) return '[' + lab + ']';
       var ch = bareChordLine(l); return ch === null ? l : ch;
     }).join('\n');
@@ -642,8 +654,9 @@
     var lastA = null;
     (analysis || []).forEach(function (a) {
       if (!a.sig && !a.label) return; // безымянный блок только со словами в режиме «Аккорды» не играется
-      if (lastA && lastA.sig === a.sig && genericLabel(lastA.label) === genericLabel(a.label)) { out[out.length - 1].repeat++; return; }
-      out.push({ ref: keys[a.bi], repeat: 1 });
+      var rp = Math.max(1, (blocks[a.bi] && blocks[a.bi].repeat) || 1); // «#repeat:2» у блока
+      if (lastA && lastA.sig === a.sig && genericLabel(lastA.label) === genericLabel(a.label)) { out[out.length - 1].repeat += rp; return; }
+      out.push({ ref: keys[a.bi], repeat: rp });
       lastA = a;
     });
     return out;
